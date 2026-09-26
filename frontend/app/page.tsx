@@ -2,8 +2,8 @@
 
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Download, FileAudio, FileVideo, FolderOpen, Link2, Loader2, Music2, ShieldCheck, UploadCloud, X, Zap } from 'lucide-react'
-import { checkBackendHealth, convertVideoToMp3, downloadFromUrl, type MediaFormat } from '@/lib/api'
-import { downloadResponse, formatFileSize } from '@/lib/download'
+import { cancelDownload, checkBackendHealth, convertVideoToMp3, getDownloadFile, getDownloadProgress, startDownload, type DownloadProgressResponse, type MediaFormat, type Resolution } from '@/lib/api'
+import { downloadResponse, formatEta, formatFileSize, formatSpeed } from '@/lib/download'
 import { ACCEPTED_EXTENSIONS, MAX_FILE_SIZE, validateMediaUrl, validateVideoFile } from '@/lib/validation'
 
 function BackendStatus() {
@@ -15,17 +15,41 @@ function BackendStatus() {
 function UrlDownloader({ notify }: { notify: (message: string, error?: boolean) => void }) {
   const [url, setUrl] = useState('')
   const [format, setFormat] = useState<MediaFormat>('mp3')
+  const [resolution, setResolution] = useState<Resolution>('highest')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  async function submit(event: FormEvent) {
-    event.preventDefault()
-    const validation = validateMediaUrl(url)
-    setError(validation)
-    if (validation) return
-    setLoading(true)
-    try { const response = await downloadFromUrl(url.trim(), format); await downloadResponse(response, `download.${format}`); notify('Download completed successfully.') } catch (caught) { notify(caught instanceof Error ? caught.message : 'Download failed. Please try again.', true) } finally { setLoading(false) }
+  const [progress, setProgress] = useState<DownloadProgressResponse | null>(null)
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [cancelling, setCancelling] = useState(false)
+  const timerRef = useRef<number | null>(null)
+  const controllerRef = useRef<AbortController | null>(null)
+  const activeJobRef = useRef<string | null>(null)
+
+  function clearPolling() { if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null } controllerRef.current?.abort(); controllerRef.current = null }
+  useEffect(() => () => clearPolling(), [])
+  function phaseLabel(phase?: string, status?: string) { const value = phase || status || 'queued'; return value.charAt(0).toUpperCase() + value.slice(1) }
+  async function poll(id: string) {
+    if (activeJobRef.current !== id) return
+    try {
+      const next = await getDownloadProgress(id)
+      if (activeJobRef.current !== id) return
+      setProgress(next)
+      if (next.status === 'completed') {
+        clearPolling(); const response = await getDownloadFile(id); await downloadResponse(response, `media.${format}`); setJobId(null); setCancelling(false); notify('Download completed successfully.'); return
+      }
+      if (next.status === 'failed') { clearPolling(); setJobId(null); setCancelling(false); notify(next.error || 'Download failed. Please try again.', true); return }
+      if (next.status === 'cancelled') { clearPolling(); setJobId(null); setCancelling(false); return }
+      timerRef.current = window.setTimeout(() => poll(id), 700)
+    } catch (caught) { if (activeJobRef.current === id) { clearPolling(); setJobId(null); setCancelling(false); notify(caught instanceof Error ? caught.message : 'Unable to check download progress.', true) } }
   }
-  return <section className="surface-card flex flex-col gap-6 p-6 sm:p-8"><div className="flex items-start gap-4"><div className="icon-tile"><Link2 /></div><div><h2 className="text-xl font-semibold tracking-tight">Download from URL</h2><p className="mt-1 text-sm text-muted-foreground">Grab audio or video from a supported link.</p></div></div><form onSubmit={submit} className="flex flex-col gap-5"><div className="flex flex-col gap-2"><label htmlFor="video-url" className="text-sm font-medium">Video URL</label><input id="video-url" value={url} onChange={(event) => { setUrl(event.target.value); if (error) setError('') }} placeholder="Paste a YouTube or supported video URL" aria-invalid={Boolean(error)} aria-describedby={error ? 'url-error' : undefined} className="control" />{error && <p id="url-error" className="text-sm text-destructive">{error}</p>}</div><div className="flex flex-col gap-2"><label htmlFor="format" className="text-sm font-medium">Format</label><select id="format" value={format} onChange={(event) => setFormat(event.target.value as MediaFormat)} className="control"><option value="mp3">MP3 Audio</option><option value="mp4">MP4 Video</option></select></div><button className="primary-button" disabled={loading}>{loading ? <><Loader2 className="animate-spin" /> Downloading...</> : <><Download /> Download</>}</button></form></section>
+  async function submit(event: FormEvent) {
+    event.preventDefault(); const validation = validateMediaUrl(url); setError(validation); if (validation || jobId) return
+    clearPolling(); setProgress(null); setCancelling(false); const controller = new AbortController(); controllerRef.current = controller
+    try { const started = await startDownload({ url: url.trim(), format, ...(format === 'mp4' ? { resolution } : {}) }, controller.signal); activeJobRef.current = started.job_id; setJobId(started.job_id); await poll(started.job_id) } catch (caught) { if (!controller.signal.aborted) notify(caught instanceof Error ? caught.message : 'Download failed. Please try again.', true) }
+  }
+  async function handleCancel() { if (!jobId || cancelling) return; setCancelling(true); try { await cancelDownload(jobId); } catch (caught) { setCancelling(false); notify(caught instanceof Error ? caught.message : 'Unable to cancel download.', true) } }
+  const active = Boolean(jobId)
+  const percent = Math.max(0, Math.min(100, progress?.progress ?? 0))
+  return <section className="surface-card flex flex-col gap-6 p-6 sm:p-8"><div className="flex items-start gap-4"><div className="icon-tile"><Link2 /></div><div><h2 className="text-xl font-semibold tracking-tight">Download from URL</h2><p className="mt-1 text-sm text-muted-foreground">Grab audio or video from a supported link.</p></div></div><form onSubmit={submit} className="flex flex-col gap-5"><div className="flex flex-col gap-2"><label htmlFor="video-url" className="text-sm font-medium">Video URL</label><input id="video-url" value={url} disabled={active} onChange={(event) => { setUrl(event.target.value); if (error) setError('') }} placeholder="Paste a YouTube or supported video URL" aria-invalid={Boolean(error)} aria-describedby={error ? 'url-error' : undefined} className="control" />{error && <p id="url-error" className="text-sm text-destructive">{error}</p>}</div><div className="flex flex-col gap-2"><label htmlFor="format" className="text-sm font-medium">Format</label><select id="format" value={format} disabled={active} onChange={(event) => setFormat(event.target.value as MediaFormat)} className="control"><option value="mp3">MP3 Audio</option><option value="mp4">MP4 Video</option></select></div>{format === 'mp4' && <div className="flex flex-col gap-2"><label htmlFor="resolution" className="text-sm font-medium">Video quality</label><select id="resolution" value={resolution} disabled={active} onChange={(event) => setResolution(event.target.value as Resolution)} className="control"><option value="highest">Highest</option><option value="medium">Medium</option><option value="lowest">Lowest</option></select></div>}<button className="primary-button" disabled={active}>{active ? <><Loader2 className="animate-spin" /> Downloading...</> : <><Download /> Download</>}</button></form>{progress && active && <div className="flex flex-col gap-3" aria-live="polite"><div className="flex items-center justify-between text-sm font-medium"><span>{phaseLabel(progress.phase, progress.status)}</span><span>{progress.status === 'processing' ? 'Finalizing file' : `${percent.toFixed(1)}%`}</span></div><div role="progressbar" aria-label="Download progress" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} className="h-2 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${percent}%` }} /></div>{progress.status === 'processing' && <p className="text-xs text-muted-foreground">Processing media...</p>}{progress.selection_note && progress.effective_resolution && <p className="text-xs text-muted-foreground">Using {progress.effective_resolution}p because the requested quality was not available.</p>}<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">{progress.downloaded_bytes && progress.total_bytes ? <span>{formatFileSize(progress.downloaded_bytes)} / {formatFileSize(progress.total_bytes)}</span> : null}{progress.speed_bytes_per_second ? <span>{formatSpeed(progress.speed_bytes_per_second)}</span> : null}{progress.eta_seconds ? <span>{formatEta(progress.eta_seconds)}</span> : null}</div><button type="button" className="secondary-button" disabled={cancelling} onClick={handleCancel}>{cancelling ? 'Cancelling...' : 'Cancel Download'}</button></div>}</section>
 }
 
 function VideoConverter({ notify }: { notify: (message: string, error?: boolean) => void }) {

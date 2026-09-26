@@ -11,8 +11,10 @@ from routes.convert import convert_bp
 from routes.download import download_bp
 from routes.health import health_bp
 from services.ffmpeg_service import FFmpegNotAvailableError
+from services.job_service import job_manager
 
 load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
 
 def _max_file_size_bytes() -> int:
@@ -35,7 +37,11 @@ def create_app() -> Flask:
     app.config["MAX_CONTENT_LENGTH"] = _max_file_size_bytes()
     app.config["JSON_SORT_KEYS"] = False
 
-    CORS(app, origins=[frontend_url])
+    CORS(
+        app,
+        origins=[frontend_url],
+        expose_headers=["Content-Disposition", "X-Download-Filename"],
+    )
 
     app.register_blueprint(health_bp)
     app.register_blueprint(download_bp)
@@ -60,7 +66,6 @@ def create_app() -> Flask:
         app.logger.exception("Unhandled server error: %s", error)
         return jsonify(error="Media conversion failed."), 500
 
-    # Fail fast in logs without preventing the health endpoint from starting.
     if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
         app.logger.warning(
             "FFmpeg and/or ffprobe is not available in PATH. "
@@ -72,5 +77,9 @@ def create_app() -> Flask:
 
 app = create_app()
 
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    try:
+        app.run(host="0.0.0.0", port=5000, debug=False)
+    finally:
+        job_manager.shutdown()
