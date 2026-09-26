@@ -7,7 +7,12 @@ from flask import Blueprint, jsonify, request, send_file
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
-from services.ffmpeg_service import FFmpegNotAvailableError, convert_video_to_mp3, ensure_ffmpeg_available
+from services.ffmpeg_service import (
+    FFmpegNotAvailableError,
+    NoAudioStreamError,
+    convert_video_to_mp3,
+    ensure_ffmpeg_available,
+)
 from services.file_service import ALLOWED_VIDEO_EXTENSIONS, sanitize_filename
 
 logger = logging.getLogger(__name__)
@@ -63,6 +68,11 @@ def convert_video():
         response.call_on_close(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
         return response
 
+    except NoAudioStreamError:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return jsonify(
+            error="The uploaded video does not contain an audio stream."
+        ), 400
     except FFmpegNotAvailableError:
         shutil.rmtree(temp_dir, ignore_errors=True)
         return jsonify(
