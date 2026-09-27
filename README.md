@@ -1,25 +1,28 @@
 # YouTube Downloader
 
-A full-stack media downloader built with a Next.js frontend and a Python Flask backend.
+A full-stack media downloading and conversion application built with a **Next.js frontend** and a **Python Flask backend**.
+
+The project combines URL-based media downloads, local video conversion, batch processing, progress tracking, cancellation, quality selection, Unicode-safe filenames, and modern YouTube extraction into a single application.
 
 ## Features
 
-- YouTube URL to MP3.
-- YouTube URL to MP4.
-- MP4 quality selection: **Highest**, **Medium**, and **Lowest**.
-- Automatic resolution fallback when the requested quality tier is unavailable.
-- Asynchronous URL download jobs.
-- Live download progress with percentage, transferred bytes, speed, and ETA.
-- Cancel/abort for active URL downloads.
-- Local video to MP3 conversion.
-- Batch local video conversion: up to **10 videos per request**.
-- Batch conversion returns a ZIP containing the generated MP3 files.
-- Original media/file titles are preserved in output filenames when possible, including Malayalam, Hindi, English, and mixed-language names.
-- Filename sanitization that removes filesystem-invalid characters without transliterating Unicode scripts.
-- FFmpeg-based MP3 extraction and MP4 stream merging.
-- Modern YouTube extraction support through yt-dlp, EJS/Deno, and a bgutil PO Token provider.
-- Temporary media storage with cleanup.
-- No database, authentication, user accounts, ORM, or persistent media records.
+- Download media from YouTube URLs as **MP3**.
+- Download media from YouTube URLs as **MP4**.
+- Select MP4 quality using **Highest**, **Medium**, or **Lowest**.
+- Automatically choose a suitable available resolution when the requested quality tier is unavailable.
+- Process URL downloads through asynchronous background jobs.
+- Display live download progress, including percentage, transferred data, speed, and ETA.
+- Cancel an active URL download.
+- Convert local video files to MP3.
+- Submit up to **10 local videos in one conversion request**.
+- Package multiple converted MP3 files into a ZIP archive.
+- Preserve media and uploaded filenames whenever possible.
+- Keep **Malayalam, Hindi, English, and mixed-language filenames** intact without transliterating Unicode scripts.
+- Sanitize filenames for filesystem safety while retaining their original language and readable text.
+- Use FFmpeg for MP3 extraction and MP4 audio/video merging.
+- Use modern yt-dlp YouTube extraction with **EJS/Deno** and the **bgutil PO Token provider**.
+- Store generated media temporarily and remove it after processing.
+- Run without a database, authentication, user accounts, ORM, or persistent media records.
 
 ## Whole-project architecture
 
@@ -32,7 +35,7 @@ A full-stack media downloader built with a Next.js frontend and a Python Flask b
                               │                         │
                               │ • URL download UI      │
                               │ • MP3 / MP4 selection  │
-                              │ • Resolution selector  │
+                              │ • Quality selection    │
                               │ • Progress + ETA       │
                               │ • Cancel download      │
                               │ • Multi-file upload    │
@@ -45,16 +48,16 @@ A full-stack media downloader built with a Next.js frontend and a Python Flask b
                               ┌─────────────────────────┐
                               │     Flask Backend       │
                               │                         │
-                              │ • API validation       │
-                              │ • Async job manager     │
+                              │ • Request validation    │
+                              │ • Async job management  │
                               │ • Progress callbacks    │
-                              │ • Cancellation          │
-                              │ • File conversion       │
-                              │ • Filename sanitizing   │
+                              │ • Download cancellation │
+                              │ • Media conversion      │
+                              │ • Filename sanitization │
                               │ • Temporary cleanup     │
                               └───────┬─────────┬───────┘
                                       │         │
-                         URL downloads │         │ local conversion
+                       URL downloads  │         │  local conversion
                                       │         │
                                       ▼         ▼
                                ┌──────────┐  ┌──────────┐
@@ -74,51 +77,53 @@ A full-stack media downloader built with a Next.js frontend and a Python Flask b
                                   YouTube
 ```
 
-## URL-download flow
+## URL download flow
 
 ```text
-User selects MP3 or MP4
+User enters a media URL
         ↓
-For MP4: select Highest / Medium / Lowest
+Choose MP3 or MP4
+        ↓
+For MP4: choose Highest / Medium / Lowest
         ↓
 POST /api/download/start
         ↓
-Flask creates an in-memory job
+Flask creates an in-memory download job
         ↓
 yt-dlp + mweb + PO Token provider
         ↓
-YouTube media download
+YouTube media retrieval
         ↓
-FFmpeg post-processing / merging
+FFmpeg extraction / merging
         ↓
 Frontend polls /api/download/progress/{job_id}
         ↓
-User may cancel with /api/download/cancel/{job_id}
+User may cancel through /api/download/cancel/{job_id}
         ↓
-Completed
+Job completes
         ↓
 GET /api/download/file/{job_id}
         ↓
-Browser saves the original media title
+Browser saves the file using its original media title
 ```
 
 ## Local-video conversion flow
 
 ```text
-User selects 1–10 local videos
+User selects 1–10 local video files
         ↓
 POST /api/convert (multipart/form-data)
         ↓
-Flask validates all files
+Flask validates the complete upload
         ↓
-Temporary input files
+Files are written to temporary storage
         ↓
-FFmpeg extracts first audio stream to MP3
+FFmpeg extracts audio to MP3
         ↓
-1 file → direct MP3 response
-2–10 files → ZIP response
+1 file  → direct MP3 response
+2–10 files → ZIP containing MP3 files
         ↓
-Temporary files are cleaned up
+Temporary inputs and outputs are cleaned up
 ```
 
 ## Project structure
@@ -126,6 +131,7 @@ Temporary files are cleaned up
 ```text
 youtube-downloader/
 ├── README.md
+│
 ├── backend/
 │   ├── app.py
 │   ├── requirements.txt
@@ -135,6 +141,7 @@ youtube-downloader/
 │   ├── routes/
 │   ├── services/
 │   └── utils/
+│
 └── frontend/
     ├── package.json
     ├── README.md
