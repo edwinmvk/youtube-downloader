@@ -3,3 +3,4 @@ flask-cors
 yt-dlp[default]
 python-dotenv
 bgutil-ytdlp-pot-provider==2.0.0
+gunicorn

@@ -1,280 +1,133 @@
 # YouTube Downloader Frontend
 
-Next.js frontend for the `youtube-downloader` project.
+## Docker architecture
 
-## Frontend responsibilities
+The Next.js frontend runs as a separate Docker container. Its port is internal to Docker and is not published to the Windows host.
 
-The frontend provides the user interface for:
+```text
+                                Browser
+                                   │
+                                   │ http://localhost
+                                   ▼
+                         Windows host port :80
+                                   │
+                                   ▼
+                          ┌─────────────────┐
+                          │ Nginx container │
+                          │      :80        │
+                          └────────┬────────┘
+                                   │
+                         ┌─────────┴─────────┐
+                         │                   │
+                         │ /                 │ /api/*
+                         ▼                   ▼
+                 ┌────────────────┐  ┌────────────────┐
+                 │ FRONTEND       │  │ BACKEND       │
+                 │ CONTAINER      │  │ CONTAINER     │
+                 │                │  │               │
+                 │ Next.js :3000  │  │ Gunicorn :5000│
+                 └────────────────┘  └───────┬───────┘
+                                             │
+                                             ▼
+                                      bgutil-provider
+                                           :4416
+```
 
-- URL entry and media-format selection.
-- MP3 and MP4 download selection.
-- Highest / Medium / Lowest MP4 quality selection.
+### Browser communication
+
+The browser uses one public origin:
+
+```text
+http://localhost
+```
+
+The frontend sends API requests to:
+
+```text
+/api/*
+```
+
+Nginx routes those requests to the backend container.
+
+The browser does not communicate directly with:
+
+```text
+backend:5000
+bgutil-provider:4416
+```
+
+### Docker network
+
+```text
+proxy_net
+├── nginx
+├── frontend
+└── backend
+```
+
+The frontend listens on:
+
+```text
+3000
+```
+
+but port `3000` is internal to Docker.
+
+Nginx reaches the frontend using the Docker service name:
+
+```text
+frontend:3000
+```
+
+## Features
+
+- YouTube URL input.
+- MP3 / MP4 selection.
+- MP4 quality selection: Highest, Medium, Lowest.
 - Resolution fallback messages.
-- Download progress, speed, ETA, and processing state.
+- Asynchronous download progress.
+- Download speed and ETA display.
 - Download cancellation.
-- Automatic binary-file download after a completed async job.
-- Preservation of the backend-provided media filename, including Unicode names.
-- Single local-video upload to MP3.
-- Batch local-video selection of up to 10 files.
-- Batch conversion download of the generated ZIP.
-
-## Frontend architecture
-
-```text
-                         Next.js Application
-                                  │
-                  ┌───────────────┴────────────────┐
-                  │                                │
-                  ▼                                ▼
-          URL Download UI                  Local Conversion UI
-                  │                                │
-        ┌─────────┼─────────┐            ┌─────────┴─────────┐
-        │         │         │            │                   │
-        ▼         ▼         ▼            ▼                   ▼
-      MP3       MP4     Resolution    1 file            2–10 files
-                │        selector        │                   │
-                ▼                       ▼                   ▼
-          Async job API            /api/convert        /api/convert
-                │                                           │
-                ▼                                           ▼
-        Progress polling                              ZIP response
-                │
-                ▼
-        Cancel / complete
-                │
-                ▼
-       Completed file fetch
-```
-
-## URL download flow
-
-```text
-User enters URL
-      ↓
-Select MP3 / MP4
-      ↓
-If MP4 → Highest / Medium / Lowest
-      ↓
-POST /api/download/start
-      ↓
-Receive job_id
-      ↓
-Poll /api/download/progress/{job_id}
-      ↓
-Show progress + speed + ETA + phase
-      ↓
-Optional cancel
-      ↓
-completed
-      ↓
-GET /api/download/file/{job_id}
-      ↓
-Read Content-Disposition / X-Download-Filename
-      ↓
-Browser saves the real media title
-```
-
-## Local conversion flow
-
-```text
-Select up to 10 video files
-      ↓
-Display selected-file list
-      ↓
-POST /api/convert using repeated `files` fields
-      ↓
-1 selected file → MP3 response
-2–10 selected files → ZIP response
-      ↓
-Preserve each original filename as the MP3 name
-      ↓
-Browser downloads the result
-```
-
-## Prerequisites
-
-Install the following before running the frontend:
-
-- Node.js supported by the existing Next.js project. For a current Next.js 16 project, Node.js 20.9+ is required.
-- A package manager matching the repository lockfile: npm, pnpm, yarn, or bun.
-- A modern browser.
-- A running Flask backend at `http://localhost:5000` for local development.
-
-## Install dependencies
-
-From the repository root:
-
-```cmd
-cd frontend
-```
-
-Then use the package manager already selected by the project.
-
-### npm
-
-```cmd
-npm install
-```
-
-### pnpm
-
-```cmd
-pnpm install
-```
-
-### yarn
-
-```cmd
-yarn install
-```
-
-### bun
-
-```cmd
-bun install
-```
-
-Use only the package manager associated with the existing lockfile.
-
-## Environment configuration
-
-Create the frontend environment file according to the existing project convention.
-
-Typical local value:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5000
-```
-
-Do not hardcode the backend URL throughout React components.
-
-## Start the frontend
-
-Start the backend first, then from the `frontend` directory run:
-
-```cmd
-npm run dev
-```
-
-Or:
-
-```cmd
-pnpm dev
-yarn dev
-bun dev
-```
-
-The frontend normally runs at:
-
-```text
-http://localhost:3000
-```
-
-## Multiple-file conversion UI
-
-The local conversion UI should allow the user to select up to **10** supported video files at once.
-
-Supported extensions:
-
-```text
-.mp4
-.mov
-.mkv
-.avi
-.webm
-```
-
-Recommended UI behavior:
-
-- Use a single `multiple` file input or the existing drag-and-drop component.
-- Show every selected file in the existing conversion card/list.
-- Display filename and useful metadata such as size.
-- Allow removing an individual file before conversion.
-- Reject or disable selection when more than 10 files would be submitted.
-- Do not silently discard the 11th file.
-- Preserve Unicode filenames in the UI.
-
-Send the request as `multipart/form-data` using repeated `files` fields:
-
-```ts
-const formData = new FormData();
-for (const file of selectedFiles) {
-  formData.append("files", file);
-}
-```
-
-Do not manually set the `Content-Type` header for `FormData`; let the browser set the multipart boundary.
-
-### Response handling
-
-For one selected file:
-
-```text
-Content-Type: audio/mpeg
-```
-
-Download the returned Blob using its server-provided filename.
-
-For two to ten selected files:
-
-```text
-Content-Type: application/zip
-```
-
-Download the ZIP. The ZIP contains one MP3 per source video.
-
-Use the response filename when available rather than hardcoding `download`.
-
-## Unicode filename handling
-
-The backend intentionally preserves Unicode output names. The frontend must not transliterate, ASCII-normalize, or replace Malayalam/Hindi characters.
-
-Examples of valid output names include:
-
-```text
-സ്വർഗീയ സിംഹാസനത്തിൽ വാഴും.mp3
-भक्ति गीत.mp3
-Malayalam English Mixed Title.mp3
-हिंदी English Mixed Title.mp3
-```
-
-When downloading a Blob response, prefer this filename resolution order:
-
-1. `X-Download-Filename`, when present.
-2. RFC 5987/6266 `filename*` from `Content-Disposition`.
-3. Quoted/plain `filename` from `Content-Disposition`.
-4. A sensible final fallback such as `converted.mp3` or `converted_audio.zip`.
-
-Do not use `download` as the default filename.
-
-## Existing URL-download UI
-
-For URL downloads, use the backend async API rather than the old synchronous API for the progress-enabled experience:
-
-```text
-POST /api/download/start
-GET  /api/download/progress/{job_id}
-POST /api/download/cancel/{job_id}
-GET  /api/download/file/{job_id}
-```
-
-Poll about every 500–1000 ms while active and stop polling on `completed`, `cancelled`, or `failed`.
-
-Keep the current architecture, components, service layer, design system, and routing. New functionality should be implemented as an extension of the existing frontend rather than a replacement.
+- Automatic file retrieval after completion.
+- Preservation of the backend-provided filename.
+- Local video upload and MP3 conversion.
+- Multi-file upload for up to 10 videos.
+- ZIP download handling for multi-file conversion.
+- Unicode filename preservation.
 
 ## Error handling
 
-Show backend-provided human-readable error messages in the existing error state or toast.
+The frontend handles API, download, conversion, and network failures as user-facing states rather than treating every response as a successful file.
 
-Handle at least:
+Handled UI cases include:
 
-- More than 10 selected files.
-- Unsupported video format.
-- Empty file.
-- File too large.
+- Invalid requests or URLs.
+- Unsupported resolution.
+- Download failure.
+- Cancelled downloads.
 - Conversion failure.
-- Backend unavailable.
-- URL download failure.
-- Cancelled download.
+- Upload validation failure.
+- Expired or unavailable jobs.
+- Network or server errors.
 
-Do not expose Python tracebacks or raw internal server errors in the UI.
+For active URL downloads, polling stops when the job reaches:
+
+```text
+completed
+cancelled
+failed
+```
+
+Completed file downloads use the filename supplied by the backend instead of a generic browser filename.
+
+## Port visibility
+
+```text
+Windows host
+└── :80 → Nginx
+
+Docker internal
+└── Frontend :3000
+```
+
+The frontend is not directly published on `localhost:3000` in the Docker-based setup.

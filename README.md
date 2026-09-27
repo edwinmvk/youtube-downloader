@@ -1,149 +1,275 @@
 # YouTube Downloader
 
-A full-stack media downloading and conversion application built with a **Next.js frontend** and a **Python Flask backend**.
+> **Running locally without Docker:** switch to the `runtime-native-without-docker` branch.
+>
+> This branch uses the Docker-based architecture described below.
 
-The project combines URL-based media downloads, local video conversion, batch processing, progress tracking, cancellation, quality selection, Unicode-safe filenames, and modern YouTube extraction into a single application.
+## Description
 
-## Features
+YouTube Downloader is a full-stack media downloading and conversion application built with a **Next.js frontend**, **Python Flask backend**, **yt-dlp**, **FFmpeg**, **Deno**, **bgutil PO Token provider**, and **Nginx**.
 
-- Download media from YouTube URLs as **MP3**.
-- Download media from YouTube URLs as **MP4**.
-- Select MP4 quality using **Highest**, **Medium**, or **Lowest**.
-- Automatically choose a suitable available resolution when the requested quality tier is unavailable.
-- Process URL downloads through asynchronous background jobs.
-- Display live download progress, including percentage, transferred data, speed, and ETA.
-- Cancel an active URL download.
-- Convert local video files to MP3.
-- Submit up to **10 local videos in one conversion request**.
-- Package multiple converted MP3 files into a ZIP archive.
-- Preserve media and uploaded filenames whenever possible.
-- Keep **Malayalam, Hindi, English, and mixed-language filenames** intact without transliterating Unicode scripts.
-- Sanitize filenames for filesystem safety while retaining their original language and readable text.
-- Use FFmpeg for MP3 extraction and MP4 audio/video merging.
-- Use modern yt-dlp YouTube extraction with **EJS/Deno** and the **bgutil PO Token provider**.
-- Store generated media temporarily and remove it after processing.
-- Run without a database, authentication, user accounts, ORM, or persistent media records.
+The application supports YouTube URL downloads as MP3 or MP4, MP4 quality selection, asynchronous download progress, download cancellation, local video-to-MP3 conversion, batch conversion of up to 10 local videos, ZIP output for multi-file conversion, Unicode-safe filenames, and temporary-file cleanup. The application does not use a database, authentication, user accounts, or persistent media records.
 
 ## Whole-project architecture
 
 ```text
-                                    Internet / Browser
-                                           │
-                                           ▼
-                              ┌─────────────────────────┐
-                              │    Next.js Frontend     │
-                              │                         │
-                              │ • URL download UI      │
-                              │ • MP3 / MP4 selection  │
-                              │ • Quality selection    │
-                              │ • Progress + ETA       │
-                              │ • Cancel download      │
-                              │ • Multi-file upload    │
-                              │ • Filename handling    │
-                              └────────────┬────────────┘
-                                           │
-                              REST / JSON / multipart
-                                           │
-                                           ▼
-                              ┌─────────────────────────┐
-                              │     Flask Backend       │
-                              │                         │
-                              │ • Request validation    │
-                              │ • Async job management  │
-                              │ • Progress callbacks    │
-                              │ • Download cancellation │
-                              │ • Media conversion      │
-                              │ • Filename sanitization │
-                              │ • Temporary cleanup     │
-                              └───────┬─────────┬───────┘
-                                      │         │
-                       URL downloads  │         │  local conversion
-                                      │         │
-                                      ▼         ▼
-                               ┌──────────┐  ┌──────────┐
-                               │  yt-dlp  │  │  FFmpeg  │
-                               └────┬─────┘  └──────────┘
-                                    │
-                      YouTube       │
-                      extraction    │
-                                    ▼
-                         ┌─────────────────────┐
-                         │ EJS / Deno          │
-                         │ bgutil PO Token     │
-                         │ Provider            │
-                         └──────────┬──────────┘
-                                    │
-                                    ▼
-                                  YouTube
+                                      Browser
+                                         │
+                                         │ http://localhost
+                                         ▼
+                              Windows host port :80
+                                         │
+                                         │ 80:80
+                                         ▼
+                          ┌─────────────────────────┐
+                          │     NGINX CONTAINER     │
+                          │          :80            │
+                          │                         │
+                          │  Reverse proxy / entry  │
+                          │        point            │
+                          └────────────┬────────────┘
+                                       │
+                         ┌─────────────┴─────────────┐
+                         │                           │
+                         ▼                           ▼
+                ┌─────────────────┐       ┌─────────────────┐
+                │ FRONTEND        │       │ BACKEND         │
+                │ CONTAINER       │       │ CONTAINER       │
+                │                 │       │                 │
+                │ Next.js :3000   │       │ Gunicorn :5000  │
+                └─────────────────┘       └────────┬────────┘
+                                                    │
+                                                    │ Docker HTTP
+                                                    ▼
+                                          ┌────────────────────┐
+                                          │ BGUTIL-PROVIDER    │
+                                          │ CONTAINER          │
+                                          │       :4416        │
+                                          └─────────┬──────────┘
+                                                    │
+                                                    ▼
+                                                 YouTube
+
+Backend container also contains:
+    yt-dlp + EJS/Deno + FFmpeg
 ```
 
-## URL download flow
+### Request routing
 
 ```text
-User enters a media URL
-        ↓
-Choose MP3 or MP4
-        ↓
-For MP4: choose Highest / Medium / Lowest
-        ↓
-POST /api/download/start
-        ↓
-Flask creates an in-memory download job
-        ↓
-yt-dlp + mweb + PO Token provider
-        ↓
-YouTube media retrieval
-        ↓
-FFmpeg extraction / merging
-        ↓
-Frontend polls /api/download/progress/{job_id}
-        ↓
-User may cancel through /api/download/cancel/{job_id}
-        ↓
-Job completes
-        ↓
-GET /api/download/file/{job_id}
-        ↓
-Browser saves the file using its original media title
+Browser
+  │
+  ├── GET / --------------------------> Nginx ----> Frontend :3000
+  │
+  └── /api/* -------------------------> Nginx ----> Backend :5000
+                                                    │
+                                                    ├── yt-dlp
+                                                    ├── Deno / EJS
+                                                    ├── FFmpeg
+                                                    └── bgutil-provider :4416
 ```
 
-## Local-video conversion flow
+### Docker networking
 
 ```text
-User selects 1–10 local video files
-        ↓
-POST /api/convert (multipart/form-data)
-        ↓
-Flask validates the complete upload
-        ↓
-Files are written to temporary storage
-        ↓
-FFmpeg extracts audio to MP3
-        ↓
-1 file  → direct MP3 response
-2–10 files → ZIP containing MP3 files
-        ↓
-Temporary inputs and outputs are cleaned up
+proxy_net
+├── nginx
+├── frontend
+└── backend
+
+backend_net
+├── backend
+└── bgutil-provider
 ```
+
+Only Nginx publishes a host port:
+
+```text
+Windows host :80  →  nginx container :80
+```
+
+The following ports remain internal to Docker:
+
+```text
+frontend :3000
+backend  :5000
+bgutil   :4416
+```
+
+## Prerequisites
+
+Install the following on the host machine:
+
+- **Docker Desktop** with Docker Compose support
+- **Git**
+- A modern web browser
+- Internet access for URL-based media downloads
+
+The application runtime dependencies such as Python, Flask, FFmpeg, Deno, yt-dlp, Node.js, Next.js, Nginx, and the PO Token provider run inside their respective Docker images/containers.
+
+Verify Docker:
+
+```cmd
+docker --version
+docker compose version
+```
+
+## Run locally with Docker
+
+Run all commands from the repository root.
+
+### 1. Validate the Compose configuration
+
+```cmd
+docker compose config
+```
+
+### 2. Build the application images
+
+```cmd
+docker compose build
+```
+
+### 3. Start the complete application
+
+```cmd
+docker compose up
+```
+
+For detached/background mode:
+
+```cmd
+docker compose up -d
+```
+
+### 4. Verify the containers
+
+```cmd
+docker compose ps
+```
+
+Expected services:
+
+```text
+backend
+bgutil-provider
+frontend
+nginx
+```
+
+### 5. Verify the backend through Nginx
+
+```cmd
+curl.exe http://localhost/api/health
+```
+
+Expected response:
+
+```json
+{"status":"ok"}
+```
+
+### 6. Open the application
+
+```text
+http://localhost
+```
+
+### 7. Stop the application
+
+```cmd
+docker compose down
+```
+
+## Environment variables
+
+The Docker setup uses three environment files: the root `.env.docker`, the backend environment file, and the frontend environment file.
+
+### Root `.env.docker`
+
+The root `.env.docker` supplies the Docker Compose configuration used by the application:
+
+```env
+FRONTEND_URL=http://localhost
+MAX_FILE_SIZE_MB=500
+MAX_CONCURRENT_DOWNLOADS=2
+DOWNLOAD_JOB_TTL_SECONDS=1800
+POT_PROVIDER_URL=http://bgutil-provider:4416
+NEXT_PUBLIC_API_URL=/api
+```
+
+| Variable | Purpose | Value |
+|---|---|---|
+| `FRONTEND_URL` | Browser-facing origin served by Nginx and used by backend CORS | `http://localhost` |
+| `MAX_FILE_SIZE_MB` | Total request body/upload limit for Flask conversion | `500` |
+| `MAX_CONCURRENT_DOWNLOADS` | In-memory async download worker count | `2` |
+| `DOWNLOAD_JOB_TTL_SECONDS` | How long completed async jobs remain available in memory | `1800` |
+| `POT_PROVIDER_URL` | Docker Compose service address of the PO Token provider | `http://bgutil-provider:4416` |
+| `NEXT_PUBLIC_API_URL` | Browser-facing API base path routed by Nginx to Flask | `/api` |
+
+### Backend environment
+
+The backend environment file contains:
+
+```env
+FRONTEND_URL=http://localhost
+MAX_FILE_SIZE_MB=500
+MAX_CONCURRENT_DOWNLOADS=2
+DOWNLOAD_JOB_TTL_SECONDS=1800
+POT_PROVIDER_URL=http://bgutil-provider:4416
+```
+
+The backend uses the application settings and the internal Docker service name for the PO Token provider. The `NEXT_PUBLIC_API_URL` entry is present in the backend environment file to match the current project configuration; browser API requests are ultimately routed by Nginx through `/api`.
+
+### Frontend environment
+
+The frontend environment file contains only:
+
+```env
+NEXT_PUBLIC_API_URL=/api
+```
+
+This keeps browser API requests same-origin. The browser calls `/api/...`, Nginx receives the request on port 80, and Nginx forwards it to the backend container on port 5000.
+
+`POT_PROVIDER_URL` must use `http://bgutil-provider:4416` inside Docker. `127.0.0.1` inside the backend container points back to the backend container itself, not the bgutil provider.
 
 ## Project structure
 
 ```text
 youtube-downloader/
+│
 ├── README.md
+├── docker-compose.yml
+├── .env.docker.example
+│
+├── nginx/
+│   └── default.conf
 │
 ├── backend/
-│   ├── app.py
+│   ├── Dockerfile
+│   ├── .dockerignore
 │   ├── requirements.txt
-│   ├── .env.example
+│   ├── app.py
 │   ├── README.md
-│   ├── FRONTEND_V0_BATCH_CONVERT_CONTINUATION_PROMPT.md
+│   ├── .env.example
 │   ├── routes/
+│   │   ├── __init__.py
+│   │   ├── download.py
+│   │   └── convert.py
 │   ├── services/
+│   │   ├── __init__.py
+│   │   ├── yt_dlp_service.py
+│   │   ├── ffmpeg_service.py
+│   │   ├── file_service.py
+│   │   └── job_service.py
 │   └── utils/
+│       └── __init__.py
 │
 └── frontend/
+    ├── Dockerfile
+    ├── .dockerignore
     ├── package.json
     ├── README.md
+    ├── next.config.mjs
     └── ...
 ```
