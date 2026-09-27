@@ -2,7 +2,7 @@
 
 import { ChangeEvent, DragEvent, FormEvent, useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Download, FileAudio, FileVideo, FolderOpen, Link2, Loader2, Music2, ShieldCheck, UploadCloud, X, Zap } from 'lucide-react'
-import { cancelDownload, checkBackendHealth, convertVideoToMp3, getDownloadFile, getDownloadProgress, startDownload, type DownloadProgressResponse, type MediaFormat, type Resolution } from '@/lib/api'
+import { cancelDownload, checkBackendHealth, convertVideosToMp3, getDownloadFile, getDownloadProgress, startDownload, type DownloadProgressResponse, type MediaFormat, type Resolution } from '@/lib/api'
 import { downloadResponse, formatEta, formatFileSize, formatSpeed } from '@/lib/download'
 import { ACCEPTED_EXTENSIONS, MAX_FILE_SIZE, validateMediaUrl, validateVideoFile } from '@/lib/validation'
 
@@ -53,11 +53,38 @@ function UrlDownloader({ notify }: { notify: (message: string, error?: boolean) 
 }
 
 function VideoConverter({ notify }: { notify: (message: string, error?: boolean) => void }) {
-  const inputRef = useRef<HTMLInputElement>(null); const [file, setFile] = useState<File | null>(null); const [error, setError] = useState(''); const [loading, setLoading] = useState(false)
-  function choose(candidate?: File) { if (!candidate) return; const validation = validateVideoFile(candidate); setError(validation); if (!validation) setFile(candidate) }
-  function onDrop(event: DragEvent<HTMLDivElement>) { event.preventDefault(); choose(event.dataTransfer.files[0]) }
-  async function convert() { if (!file) return; setLoading(true); try { const response = await convertVideoToMp3(file); await downloadResponse(response, `${file.name.replace(/\.[^.]+$/, '')}.mp3`); notify('Video converted to MP3 successfully.'); setFile(null) } catch (caught) { notify(caught instanceof Error ? caught.message : 'Conversion failed. Please try again.', true) } finally { setLoading(false) } }
-  return <section className="surface-card flex flex-col gap-6 p-6 sm:p-8"><div className="flex items-start gap-4"><div className="icon-tile"><Music2 /></div><div><h2 className="text-xl font-semibold tracking-tight">Convert Video to MP3</h2><p className="mt-1 text-sm text-muted-foreground">Turn a local video into an audio file.</p></div></div><div onDragOver={(event) => event.preventDefault()} onDrop={onDrop} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click() }} role="button" tabIndex={0} className="dropzone"><input ref={inputRef} type="file" className="sr-only" accept={ACCEPTED_EXTENSIONS.map((item) => `.${item}`).join(',')} onChange={(event: ChangeEvent<HTMLInputElement>) => choose(event.target.files?.[0])} /><UploadCloud className="mb-3 text-primary" /><p className="font-medium">Drag & drop your video here</p><p className="my-2 text-sm text-muted-foreground">or <span className="font-medium text-primary">Choose File</span></p><p className="text-xs text-muted-foreground">MP4, MOV, MKV, AVI, WEBM · Up to {MAX_FILE_SIZE / 1024 / 1024} MB</p></div>{error && <p className="text-sm text-destructive">{error}</p>}{file && <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3"><div className="rounded-lg bg-background p-2"><FileVideo className="text-primary" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{file.name}</p><p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p></div><button type="button" aria-label="Remove selected file" onClick={() => setFile(null)} className="icon-button"><X /></button></div>}{file && <button className="primary-button" disabled={loading} onClick={convert}>{loading ? <><Loader2 className="animate-spin" /> Converting...</> : <><FileAudio /> Convert to MP3</>}</button>}</section>
+  const inputRef = useRef<HTMLInputElement>(null)
+  const [files, setFiles] = useState<File[]>([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  function addFiles(candidates: File[]) {
+    setError('')
+    const remaining = 10 - files.length
+    if (candidates.length > remaining) {
+      setError('You can convert a maximum of 10 videos at once.')
+      return
+    }
+    const next = candidates.map((file) => validateVideoFile(file)).find(Boolean)
+    if (next) { setError(next); return }
+    setFiles((current) => [...current, ...candidates])
+  }
+
+  function onDrop(event: DragEvent<HTMLDivElement>) { event.preventDefault(); addFiles(Array.from(event.dataTransfer.files)) }
+  function removeFile(index: number) { setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index)); setError('') }
+  async function convert() {
+    if (!files.length || loading) return
+    setLoading(true)
+    try {
+      const response = await convertVideosToMp3(files)
+      await downloadResponse(response, files.length === 1 ? `${files[0].name.replace(/\.[^.]+$/, '')}.mp3` : 'converted_audio.zip')
+      notify('Conversion complete.')
+      setFiles([])
+    } catch (caught) { notify(caught instanceof Error ? caught.message : 'Conversion failed. Please try again.', true) }
+    finally { setLoading(false) }
+  }
+
+  return <section className="surface-card flex flex-col gap-6 p-6 sm:p-8"><div className="flex items-start gap-4"><div className="icon-tile"><Music2 /></div><div><h2 className="text-xl font-semibold tracking-tight">Convert Video to MP3</h2><p className="mt-1 text-sm text-muted-foreground">Turn up to 10 local videos into MP3 files.</p></div></div><div onDragOver={(event) => event.preventDefault()} onDrop={onDrop} onClick={() => inputRef.current?.click()} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') inputRef.current?.click() }} role="button" tabIndex={0} className="dropzone"><input ref={inputRef} type="file" multiple className="sr-only" accept={ACCEPTED_EXTENSIONS.map((item) => `.${item}`).join(',')} onChange={(event: ChangeEvent<HTMLInputElement>) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = '' }} /><UploadCloud className="mb-3 text-primary" /><p className="font-medium">Drag & drop your videos here</p><p className="my-2 text-sm text-muted-foreground">or <span className="font-medium text-primary">Choose Files</span></p><p className="text-xs text-muted-foreground">MP4, MOV, MKV, AVI, WEBM · Maximum 10 files · Up to {MAX_FILE_SIZE / 1024 / 1024} MB each</p></div>{error && <p role="alert" className="text-sm text-destructive">{error}</p>}{files.length > 0 && <div className="flex flex-col gap-3" aria-live="polite"><p className="text-sm font-medium">Selected files ({files.length} / 10)</p>{files.map((file, index) => <div key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center gap-3 rounded-xl border border-border bg-muted/40 p-3"><div className="rounded-lg bg-background p-2"><FileVideo className="text-primary" /></div><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium" title={file.name}>{file.name}</p><p className="text-xs text-muted-foreground">{formatFileSize(file.size)}</p></div><button type="button" aria-label={`Remove ${file.name}`} onClick={() => removeFile(index)} className="icon-button" disabled={loading}><X /></button></div>)}</div>}{files.length > 0 && <button className="primary-button" disabled={loading} onClick={convert}>{loading ? <><Loader2 className="animate-spin" /> Converting {files.length} video{files.length === 1 ? '' : 's'}...</> : <><FileAudio /> Convert to MP3</>}</button>}</section>
 }
 
 export default function Page() {

@@ -1,115 +1,52 @@
-# Media Downloader Frontend
+# YouTube Downloader Frontend
 
 Next.js frontend for the `youtube-downloader` project.
 
-The frontend runs locally at:
+## Frontend responsibilities
+
+The frontend provides the user interface for:
+
+- URL entry and media-format selection.
+- MP3 and MP4 download selection.
+- Highest / Medium / Lowest MP4 quality selection.
+- Resolution fallback messages.
+- Download progress, speed, ETA, and processing state.
+- Download cancellation.
+- Automatic binary-file download after a completed async job.
+- Preservation of the backend-provided media filename, including Unicode names.
+- Single local-video upload to MP3.
+- Batch local-video selection of up to 10 files.
+- Batch conversion download of the generated ZIP.
+
+## Frontend architecture
 
 ```text
-http://localhost:3000
+                         Next.js Application
+                                  │
+                  ┌───────────────┴────────────────┐
+                  │                                │
+                  ▼                                ▼
+          URL Download UI                  Local Conversion UI
+                  │                                │
+        ┌─────────┼─────────┐            ┌─────────┴─────────┐
+        │         │         │            │                   │
+        ▼         ▼         ▼            ▼                   ▼
+      MP3       MP4     Resolution    1 file            2–10 files
+                │        selector        │                   │
+                ▼                       ▼                   ▼
+          Async job API            /api/convert        /api/convert
+                │                                           │
+                ▼                                           ▼
+        Progress polling                              ZIP response
+                │
+                ▼
+        Cancel / complete
+                │
+                ▼
+       Completed file fetch
 ```
 
-It communicates with the Flask backend at:
-
-```text
-http://localhost:5000
-```
-
-## Features
-
-- URL input for media downloads
-- MP3 / MP4 selection
-- MP4 resolution selection: Highest / Medium / Lowest
-- Resolution fallback messages from the backend
-- Asynchronous download progress
-- Download speed and ETA display
-- Cancel Download action
-- Automatic download after completion
-- Preservation of the actual backend filename
-- Existing local-video → MP3 upload flow
-- Existing Next.js architecture and design system should be preserved
-
-## Prerequisites
-
-### Required software
-
-- Node.js **20.9+** for current Next.js 16 projects
-- npm, pnpm, yarn, or bun matching the project's lockfile
-- A running Flask backend at `http://localhost:5000`
-- A modern browser such as Chrome, Edge, Firefox, or Safari
-
-Official Next.js system requirements: https://nextjs.org/docs/app/getting-started/installation
-
-If the existing frontend project is pinned to an older Next.js version, follow the Node.js requirement from that project's `package.json`/lockfile instead of changing versions just for this README.
-
-## Install dependencies
-
-From the frontend folder:
-
-### npm
-
-```cmd
-cd C:\Users\edwin\Downloads\youtube-downloader\frontend
-npm install
-```
-
-### pnpm
-
-```cmd
-cd C:\Users\edwin\Downloads\youtube-downloader\frontend
-pnpm install
-```
-
-### yarn
-
-```cmd
-cd C:\Users\edwin\Downloads\youtube-downloader\frontend
-yarn install
-```
-
-### bun
-
-```cmd
-cd C:\Users\edwin\Downloads\youtube-downloader\frontend
-bun install
-```
-
-Use only one package manager for the project.
-
-## Configure the backend URL
-
-Create/update the frontend environment file according to the existing project convention. A typical local setting is:
-
-```env
-NEXT_PUBLIC_API_URL=http://localhost:5000
-```
-
-Do not hardcode `http://localhost:5000` in multiple React components.
-
-## Start the frontend
-
-With the backend already running:
-
-```cmd
-npm run dev
-```
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-For pnpm/yarn/bun, run the equivalent `dev` script:
-
-```cmd
-pnpm dev
-yarn dev
-bun dev
-```
-
-## Frontend ↔ backend flow
-
-For URL downloads, use the asynchronous backend API:
+## URL download flow
 
 ```text
 User enters URL
@@ -124,218 +61,220 @@ Receive job_id
       ↓
 Poll /api/download/progress/{job_id}
       ↓
-Display progress, speed, ETA, and phase
+Show progress + speed + ETA + phase
       ↓
-Optional POST /api/download/cancel/{job_id}
+Optional cancel
       ↓
 completed
       ↓
 GET /api/download/file/{job_id}
       ↓
-Browser saves file using server filename
+Read Content-Disposition / X-Download-Filename
+      ↓
+Browser saves the real media title
 ```
 
-### Progress states
-
-Map backend statuses to the UI:
+## Local conversion flow
 
 ```text
-queued      → Queued
-downloading → Downloading
-processing  → Processing
-completed   → Completed
-cancelled   → Cancelled
-failed      → Failed
+Select up to 10 video files
+      ↓
+Display selected-file list
+      ↓
+POST /api/convert using repeated `files` fields
+      ↓
+1 selected file → MP3 response
+2–10 selected files → ZIP response
+      ↓
+Preserve each original filename as the MP3 name
+      ↓
+Browser downloads the result
 ```
 
-### Polling
+## Prerequisites
 
-Poll approximately every 500–1000 ms while the job is active.
+Install the following before running the frontend:
 
-Stop polling immediately when the job reaches:
+- Node.js supported by the existing Next.js project. For a current Next.js 16 project, Node.js 20.9+ is required.
+- A package manager matching the repository lockfile: npm, pnpm, yarn, or bun.
+- A modern browser.
+- A running Flask backend at `http://localhost:5000` for local development.
 
-```text
-completed
-cancelled
-failed
+## Install dependencies
+
+From the repository root:
+
+```cmd
+cd frontend
 ```
 
-Clear timers on component unmount and when a new job replaces an old job.
+Then use the package manager already selected by the project.
 
-## Resolution selector
+### npm
 
-Only show the resolution selector for MP4.
-
-User-facing values:
-
-```text
-Highest
-Medium
-Lowest
+```cmd
+npm install
 ```
 
-Backend values:
+### pnpm
 
-```text
-Highest → highest
-Medium  → medium
-Lowest  → lowest
+```cmd
+pnpm install
 ```
 
-Do not expose raw yt-dlp format IDs.
+### yarn
 
-The backend returns:
-
-```json
-{
-  "requested_resolution": "medium",
-  "effective_resolution": 480,
-  "selection_note": "720p is not available; using the closest available resolution: 480p."
-}
+```cmd
+yarn install
 ```
 
-Show a non-blocking fallback message when `selection_note` is present.
+### bun
 
-## Cancel Download
-
-The active download UI should provide a clear **Cancel Download** button.
-
-When clicked:
-
-1. Disable duplicate clicks.
-2. Call `POST /api/download/cancel/{job_id}`.
-3. Change the button state to `Cancelling...`.
-4. Continue polling.
-5. When the backend reports `cancelled`, stop polling.
-6. Do not show a generic error for a user-initiated cancellation.
-7. Re-enable the controls so another download can start.
-
-## Filename preservation
-
-This is important because downloading the completed Blob without using the response filename can produce a browser filename such as `download`.
-
-When calling:
-
-```http
-GET /api/download/file/{job_id}
+```cmd
+bun install
 ```
 
-retrieve the filename from the response headers, preferably `Content-Disposition` and, when needed, the exposed `X-Download-Filename` header.
+Use only the package manager associated with the existing lockfile.
 
-Example approach:
+## Environment configuration
 
-```ts
-const response = await fetch(fileUrl);
-const blob = await response.blob();
+Create the frontend environment file according to the existing project convention.
 
-const headerName = response.headers.get("X-Download-Filename");
-// Otherwise parse Content-Disposition.
-
-const a = document.createElement("a");
-a.href = URL.createObjectURL(blob);
-a.download = headerName ?? "media-download";
-a.click();
-URL.revokeObjectURL(a.href);
-```
-
-The actual frontend should use its existing API/download abstraction if one already exists rather than duplicating this logic across components.
-
-## Preserve existing architecture
-
-This frontend was intended to be an incremental modification of the existing v0.dev-generated application.
-
-Do not:
-
-- rebuild the app from scratch
-- replace the routing structure unnecessarily
-- introduce a second global state system without a real need
-- duplicate the API base URL
-- remove the existing local conversion flow
-- break responsive behavior
-- replace the established visual design just to add the new functionality
-
-Prefer extending an existing hook/service/download component.
-
-## Accessibility
-
-The progress bar should use appropriate semantics such as:
-
-```text
-role="progressbar"
-aria-valuemin="0"
-aria-valuemax="100"
-aria-valuenow="..."
-```
-
-The Cancel button must have a clear accessible name, and status changes should be perceivable by screen readers where practical.
-
-## Development checks
-
-Before considering a frontend change complete:
-
-1. Start the backend.
-2. Start the frontend.
-3. Test MP3 URL download.
-4. Test MP4 Highest.
-5. Test MP4 Medium.
-6. Test MP4 Lowest.
-7. Test a source where the requested resolution is not available.
-8. Confirm progress does not run backwards.
-9. Cancel during active downloading.
-10. Confirm completed file keeps the real media title instead of the generic name `download`.
-11. Test local video → MP3 upload.
-
-## Troubleshooting
-
-### Frontend cannot connect to Flask
-
-Verify:
-
-```text
-http://localhost:5000/api/health
-```
-
-Then check the frontend environment variable:
+Typical local value:
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:5000
 ```
 
-### CORS error
+Do not hardcode the backend URL throughout React components.
 
-Verify the backend has:
+## Start the frontend
 
-```env
-FRONTEND_URL=http://localhost:3000
-```
-
-Restart Flask after changing `.env`.
-
-### Browser downloads a file named `download`
-
-Check that the frontend reads `Content-Disposition` or `X-Download-Filename` from the completed-file response and assigns the actual name to the download anchor.
-
-### Progress keeps polling after the download finishes
-
-Make sure the polling timer is cleared for all terminal states:
-
-```text
-completed
-cancelled
-failed
-```
-
-Also clear it during React component cleanup.
-
-## Production note
-
-`npm run dev` is for local development. For a production deployment use the frontend project's configured production build and start scripts.
-
-Typical Next.js commands are:
+Start the backend first, then from the `frontend` directory run:
 
 ```cmd
-npm run build
-npm run start
+npm run dev
 ```
 
-For current Next.js documentation, see: https://nextjs.org/docs/app/getting-started/installation
+Or:
+
+```cmd
+pnpm dev
+yarn dev
+bun dev
+```
+
+The frontend normally runs at:
+
+```text
+http://localhost:3000
+```
+
+## Multiple-file conversion UI
+
+The local conversion UI should allow the user to select up to **10** supported video files at once.
+
+Supported extensions:
+
+```text
+.mp4
+.mov
+.mkv
+.avi
+.webm
+```
+
+Recommended UI behavior:
+
+- Use a single `multiple` file input or the existing drag-and-drop component.
+- Show every selected file in the existing conversion card/list.
+- Display filename and useful metadata such as size.
+- Allow removing an individual file before conversion.
+- Reject or disable selection when more than 10 files would be submitted.
+- Do not silently discard the 11th file.
+- Preserve Unicode filenames in the UI.
+
+Send the request as `multipart/form-data` using repeated `files` fields:
+
+```ts
+const formData = new FormData();
+for (const file of selectedFiles) {
+  formData.append("files", file);
+}
+```
+
+Do not manually set the `Content-Type` header for `FormData`; let the browser set the multipart boundary.
+
+### Response handling
+
+For one selected file:
+
+```text
+Content-Type: audio/mpeg
+```
+
+Download the returned Blob using its server-provided filename.
+
+For two to ten selected files:
+
+```text
+Content-Type: application/zip
+```
+
+Download the ZIP. The ZIP contains one MP3 per source video.
+
+Use the response filename when available rather than hardcoding `download`.
+
+## Unicode filename handling
+
+The backend intentionally preserves Unicode output names. The frontend must not transliterate, ASCII-normalize, or replace Malayalam/Hindi characters.
+
+Examples of valid output names include:
+
+```text
+സ്വർഗീയ സിംഹാസനത്തിൽ വാഴും.mp3
+भक्ति गीत.mp3
+Malayalam English Mixed Title.mp3
+हिंदी English Mixed Title.mp3
+```
+
+When downloading a Blob response, prefer this filename resolution order:
+
+1. `X-Download-Filename`, when present.
+2. RFC 5987/6266 `filename*` from `Content-Disposition`.
+3. Quoted/plain `filename` from `Content-Disposition`.
+4. A sensible final fallback such as `converted.mp3` or `converted_audio.zip`.
+
+Do not use `download` as the default filename.
+
+## Existing URL-download UI
+
+For URL downloads, use the backend async API rather than the old synchronous API for the progress-enabled experience:
+
+```text
+POST /api/download/start
+GET  /api/download/progress/{job_id}
+POST /api/download/cancel/{job_id}
+GET  /api/download/file/{job_id}
+```
+
+Poll about every 500–1000 ms while active and stop polling on `completed`, `cancelled`, or `failed`.
+
+Keep the current architecture, components, service layer, design system, and routing. New functionality should be implemented as an extension of the existing frontend rather than a replacement.
+
+## Error handling
+
+Show backend-provided human-readable error messages in the existing error state or toast.
+
+Handle at least:
+
+- More than 10 selected files.
+- Unsupported video format.
+- Empty file.
+- File too large.
+- Conversion failure.
+- Backend unavailable.
+- URL download failure.
+- Cancelled download.
+
+Do not expose Python tracebacks or raw internal server errors in the UI.

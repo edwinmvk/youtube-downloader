@@ -50,10 +50,12 @@ export async function downloadFromUrl(url: string, format: MediaFormat) {
   if (!response.ok) throw new Error(await parseError(response)); return response
 }
 
-export async function convertVideoToMp3(file: File) {
-  const formData = new FormData(); formData.append('file', file)
+export async function convertVideosToMp3(files: File[]) {
+  const formData = new FormData()
+  for (const file of files) formData.append('files', file)
   const response = await request('/api/convert', { method: 'POST', body: formData })
-  if (!response.ok) throw new Error(await parseError(response)); return response
+  if (!response.ok) throw new Error(await parseError(response))
+  return response
 }
 
 export async function checkBackendHealth() {

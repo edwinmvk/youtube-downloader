@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from pathlib import Path
 from typing import Any, Callable
@@ -131,12 +132,21 @@ def download_media(
         requested_resolution = None
 
     output_template = str(temp_dir / "%(title)s.%(ext)s")
+    pot_provider_url = os.getenv("POT_PROVIDER_URL", "http://127.0.0.1:4416").strip()
     ydl_opts: dict[str, Any] = {
         "format": _format_selector(media_format, requested_resolution),
         "noplaylist": True,
         "outtmpl": output_template,
         "windowsfilenames": True,
         "progress_hooks": [],
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["mweb"],
+            },
+            "youtubepot-bgutilhttp": {
+                "base_url": [pot_provider_url],
+            },
+        },
     }
 
     if media_format == "mp3":
