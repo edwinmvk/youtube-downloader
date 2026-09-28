@@ -1,8 +1,9 @@
-# Docker environment
-.env.docker
-
-# Other environment files accidentally created at the root
+# Ignore environment variable files
 .env
+.env.*
+
+# But keep example environment files
+!.env*.example
 
 # OS files
 .DS_Store
