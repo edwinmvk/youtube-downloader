@@ -32,12 +32,14 @@ The application supports YouTube URL downloads as MP3 or MP4, MP4 quality select
                          ┌─────────────┴─────────────┐
                          │                           │
                          ▼                           ▼
-                ┌─────────────────┐       ┌─────────────────┐
-                │ FRONTEND        │       │ BACKEND         │
-                │ CONTAINER       │       │ CONTAINER       │
-                │                 │       │                 │
-                │ Next.js :3000   │       │ Gunicorn :5000  │
-                └─────────────────┘       └────────┬────────┘
+                ┌─────────────────┐       ┌─────────────────────────────┐
+                │ FRONTEND        │       │ BACKEND                     │
+                │ CONTAINER       │       │ CONTAINER                   │
+                │                 │       │                             │
+                │ Next.js :3000   │       │ Gunicorn :5000              │
+                │                 │       │                             │
+                │                 │       │ yt-dlp + EJS/Deno + FFmpeg  │
+                └─────────────────┘       └────────┬────────────────────┘
                                                     │
                                                     │ Docker HTTP
                                                     ▼
@@ -49,9 +51,19 @@ The application supports YouTube URL downloads as MP3 or MP4, MP4 quality select
                                                     │
                                                     ▼
                                                  YouTube
+```
 
-Backend container also contains:
-    yt-dlp + EJS/Deno + FFmpeg
+Inside the Docker frontend container, Next.js runs as a production app (`NODE_ENV=production` in Docker Compose). The Docker setup does not start the application with `npm run dev`.
+
+Inside the Docker backend container, the Flask application is served by Gunicorn on port 5000. The Docker setup does not start the application with `python app.py` or Flask's development server.
+
+The backend container also contains:
+
+```text
+yt-dlp
+FFmpeg
+Deno / EJS support
+Python application dependencies
 ```
 
 ### Request routing
@@ -118,34 +130,36 @@ docker compose version
 
 Run all commands from the repository root.
 
+The project uses a single root environment file named `.env.docker`. Since the file is intentionally named `.env.docker` instead of `.env`, pass it explicitly to Docker Compose using `--env-file .env.docker`.
+
 ### 1. Validate the Compose configuration
 
 ```cmd
-docker compose config
+docker compose --env-file .env.docker config
 ```
 
 ### 2. Build the application images
 
 ```cmd
-docker compose build
+docker compose --env-file .env.docker build
 ```
 
 ### 3. Start the complete application
 
 ```cmd
-docker compose up
+docker compose --env-file .env.docker up
 ```
 
 For detached/background mode:
 
 ```cmd
-docker compose up -d
+docker compose --env-file .env.docker up -d
 ```
 
 ### 4. Verify the containers
 
 ```cmd
-docker compose ps
+docker compose --env-file .env.docker ps
 ```
 
 Expected services:
@@ -178,7 +192,7 @@ http://localhost
 ### 7. Stop the application
 
 ```cmd
-docker compose down -v
+docker compose --env-file .env.docker down -v
 ```
 
 ## Environment variables
@@ -206,6 +220,8 @@ NEXT_PUBLIC_API_URL=/api
 | `DOWNLOAD_JOB_TTL_SECONDS` | How long completed async jobs remain available in memory | `1800` |
 | `POT_PROVIDER_URL` | Docker Compose service address of the PO Token provider | `http://bgutil-provider:4416` |
 | `NEXT_PUBLIC_API_URL` | Browser-facing API base path routed by Nginx to Flask | `/api` |
+
+There are no required `.env` files in the root, `frontend`, or `backend` directories for this Docker setup.
 
 ## Project structure
 
