@@ -178,12 +178,12 @@ http://localhost
 ### 7. Stop the application
 
 ```cmd
-docker compose down
+docker compose down -v
 ```
 
 ## Environment variables
 
-The Docker setup uses three environment files: the root `.env.docker`, the backend environment file, and the frontend environment file.
+The Docker setup uses a single environment file in the root `.env.docker`.
 
 ### Root `.env.docker`
 
@@ -207,32 +207,6 @@ NEXT_PUBLIC_API_URL=/api
 | `POT_PROVIDER_URL` | Docker Compose service address of the PO Token provider | `http://bgutil-provider:4416` |
 | `NEXT_PUBLIC_API_URL` | Browser-facing API base path routed by Nginx to Flask | `/api` |
 
-### Backend environment
-
-The backend environment file contains:
-
-```env
-FRONTEND_URL=http://localhost
-MAX_FILE_SIZE_MB=500
-MAX_CONCURRENT_DOWNLOADS=2
-DOWNLOAD_JOB_TTL_SECONDS=1800
-POT_PROVIDER_URL=http://bgutil-provider:4416
-```
-
-The backend uses the application settings and the internal Docker service name for the PO Token provider. The `NEXT_PUBLIC_API_URL` entry is present in the backend environment file to match the current project configuration; browser API requests are ultimately routed by Nginx through `/api`.
-
-### Frontend environment
-
-The frontend environment file contains only:
-
-```env
-NEXT_PUBLIC_API_URL=/api
-```
-
-This keeps browser API requests same-origin. The browser calls `/api/...`, Nginx receives the request on port 80, and Nginx forwards it to the backend container on port 5000.
-
-`POT_PROVIDER_URL` must use `http://bgutil-provider:4416` inside Docker. `127.0.0.1` inside the backend container points back to the backend container itself, not the bgutil provider.
-
 ## Project structure
 
 ```text
@@ -240,7 +214,7 @@ youtube-downloader/
 │
 ├── README.md
 ├── docker-compose.yml
-├── .env.docker.example
+├── .env.docker
 │
 ├── nginx/
 │   └── default.conf
@@ -251,7 +225,6 @@ youtube-downloader/
 │   ├── requirements.txt
 │   ├── app.py
 │   ├── README.md
-│   ├── .env.example
 │   ├── routes/
 │   │   ├── __init__.py
 │   │   ├── download.py
