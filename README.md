@@ -1,6 +1,6 @@
 # YouTube Downloader
 
-A full-stack media downloading and conversion application built with a **Next.js frontend** and a **Python Flask backend**.
+A full-stack media downloading and conversion application built with a **Next.js frontend** and a **Python FastAPI backend**.
 
 The project combines URL-based media downloads, local video conversion, batch processing, progress tracking, cancellation, quality selection, Unicode-safe filenames, and modern YouTube extraction into a single application.
 
@@ -46,7 +46,7 @@ The project combines URL-based media downloads, local video conversion, batch pr
                                            │
                                            ▼
                               ┌─────────────────────────┐
-                              │     Flask Backend       │
+                              │     FastAPI Backend       │
                               │                         │
                               │ • Request validation    │
                               │ • Async job management  │
@@ -88,7 +88,7 @@ For MP4: choose Highest / Medium / Lowest
         ↓
 POST /api/download/start
         ↓
-Flask creates an in-memory download job
+FastAPI creates an in-memory download job
         ↓
 yt-dlp + mweb + PO Token provider
         ↓
@@ -114,7 +114,7 @@ User selects 1–10 local video files
         ↓
 POST /api/convert (multipart/form-data)
         ↓
-Flask validates the complete upload
+FastAPI validates the complete upload
         ↓
 Files are written to temporary storage
         ↓
@@ -137,7 +137,6 @@ youtube-downloader/
 │   ├── requirements.txt
 │   ├── .env.example
 │   ├── README.md
-│   ├── FRONTEND_V0_BATCH_CONVERT_CONTINUATION_PROMPT.md
 │   ├── routes/
 │   ├── services/
 │   └── utils/

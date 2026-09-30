@@ -1,6 +1,6 @@
 # YouTube Downloader Backend
 
-Flask backend for the `youtube-downloader` project.
+FastAPI backend for the `youtube-downloader` project.
 
 ## Backend responsibilities
 
@@ -22,7 +22,7 @@ The backend handles:
 ## Backend architecture
 
 ```text
-                         Flask Application
+                         FastAPI Application
                                 │
               ┌─────────────────┴─────────────────┐
               │                                   │
@@ -49,7 +49,7 @@ The backend handles:
 
 | Module | Responsibility |
 |---|---|
-| `app.py` | Flask application creation, configuration, CORS, error handlers, startup checks |
+| `app.py` | FastAPI application creation, configuration, CORS, error handlers, startup checks |
 | `routes/health.py` | Health-check endpoint |
 | `routes/download.py` | Synchronous and asynchronous URL-download APIs |
 | `routes/convert.py` | Single- and multi-file local-video conversion API |
@@ -147,7 +147,7 @@ Rules:
 - If one file is submitted, the response is the MP3 directly.
 - If 2–10 files are submitted, the response is a ZIP containing all MP3 files.
 - If any uploaded file is unsupported, the request is rejected with a JSON error.
-- The existing aggregate Flask upload-size limit still applies.
+- The existing aggregate FastAPI upload-size limit still applies.
 
 ## Unicode filename handling
 
@@ -255,11 +255,13 @@ python -m pip install -r requirements.txt
 The current requirements include:
 
 ```text
-Flask
-flask-cors
+fastapi
+uvicorn[standard]
+python-multipart
 yt-dlp[default]
 python-dotenv
 bgutil-ytdlp-pot-provider==2.0.0
+gunicorn
 ```
 
 ## Environment configuration
@@ -285,8 +287,6 @@ POT_PROVIDER_URL=http://127.0.0.1:4416
 | `MAX_CONCURRENT_DOWNLOADS` | Maximum URL-download workers | `2` |
 | `DOWNLOAD_JOB_TTL_SECONDS` | In-memory job retention after completion | `1800` |
 | `POT_PROVIDER_URL` | bgutil PO Token HTTP service | `http://127.0.0.1:4416` |
-
-Do not commit `.env`.
 
 ## Start the local PO Token provider
 

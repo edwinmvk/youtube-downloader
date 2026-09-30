@@ -98,7 +98,7 @@ Install the following before running the frontend:
 - Node.js supported by the existing Next.js project. For a current Next.js 16 project, Node.js 20.9+ is required.
 - A package manager matching the repository lockfile: npm, pnpm, yarn, or bun.
 - A modern browser.
-- A running Flask backend at `http://localhost:5000` for local development.
+- A running FastAPI backend at `http://localhost:5000` for local development.
 
 ## Install dependencies
 
@@ -116,29 +116,9 @@ Then use the package manager already selected by the project.
 npm install
 ```
 
-### pnpm
-
-```cmd
-pnpm install
-```
-
-### yarn
-
-```cmd
-yarn install
-```
-
-### bun
-
-```cmd
-bun install
-```
-
-Use only the package manager associated with the existing lockfile.
-
 ## Environment configuration
 
-Create the frontend environment file according to the existing project convention.
+Create `.env` from `.env.example`.
 
 Typical local value:
 
@@ -146,22 +126,12 @@ Typical local value:
 NEXT_PUBLIC_API_URL=http://localhost:5000
 ```
 
-Do not hardcode the backend URL throughout React components.
-
 ## Start the frontend
 
 Start the backend first, then from the `frontend` directory run:
 
 ```cmd
 npm run dev
-```
-
-Or:
-
-```cmd
-pnpm dev
-yarn dev
-bun dev
 ```
 
 The frontend normally runs at:
