@@ -14,7 +14,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Pin the runtime version that has already been validated locally.
-ENV DENO_INSTALL=/usr/local
 RUN curl -fsSL https://deno.land/install.sh | sh -s v2.9.7 \
     && deno --version
 
@@ -35,4 +34,4 @@ EXPOSE 5000
 
 # The app keeps async jobs in memory. Run one Gunicorn worker so a job's
 # state stays in the same process as its progress requests.
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--threads", "4", "--timeout", "0", "app:app"]
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "1", "--worker-class", "uvicorn.workers.UvicornWorker", "--timeout", "0", "app:app"]

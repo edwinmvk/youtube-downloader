@@ -6,8 +6,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request, send_file
-from werkzeug.datastructures import FileStorage
+from fastapi import APIRouter, File, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
 
 from services.ffmpeg_service import (
     FFmpegNotAvailableError,
@@ -22,25 +23,11 @@ from services.file_service import (
 
 logger = logging.getLogger(__name__)
 
-convert_bp = Blueprint("convert", __name__)
+convert_router = APIRouter()
 MAX_CONVERT_FILES = 10
 
 
-def _get_uploaded_files() -> list[FileStorage]:
-    """Return uploaded conversion files.
-
-    The new API uses the repeated ``files`` field. The original singular
-    ``file`` field remains supported for backward compatibility.
-    """
-    files = request.files.getlist("files")
-    if files:
-        return files
-
-    single_file = request.files.get("file")
-    return [single_file] if single_file is not None else []
-
-
-def _validate_uploaded_files(files: list[FileStorage]) -> str | None:
+def _validate_uploaded_files(files: list[UploadFile]) -> str | None:
     if not files:
         return "No file was uploaded."
 
@@ -66,19 +53,26 @@ def _create_conversion_zip(output_files: list[Path], zip_path: Path) -> None:
             archive.write(output_file, arcname=archive_name)
 
 
-@convert_bp.post("/api/convert")
-def convert_video():
-    uploaded_files = _get_uploaded_files()
+@convert_router.post("/api/convert")
+def convert_video(
+    files: list[UploadFile] | None = File(default=None),
+    file: UploadFile | None = File(default=None),
+):
+    uploaded_files = list(files or [])
+    if not uploaded_files and file is not None:
+        uploaded_files = [file]
+
     validation_error = _validate_uploaded_files(uploaded_files)
     if validation_error:
-        return jsonify(error=validation_error), 400
+        return JSONResponse({"error": validation_error}, status_code=400)
 
     try:
         ensure_ffmpeg_available()
     except FFmpegNotAvailableError:
-        return jsonify(
-            error="FFmpeg is not installed or is not available in PATH."
-        ), 500
+        return JSONResponse(
+            {"error": "FFmpeg is not installed or is not available in PATH."},
+            status_code=500,
+        )
 
     temp_dir = Path(tempfile.mkdtemp(prefix="media_convert_"))
 
@@ -99,7 +93,9 @@ def convert_video():
             )
             output_path = temp_dir / output_filename
 
-            uploaded_file.save(input_path)
+            uploaded_file.file.seek(0)
+            with input_path.open("wb") as destination:
+                shutil.copyfileobj(uploaded_file.file, destination)
 
             if not input_path.exists() or input_path.stat().st_size == 0:
                 raise ValueError(f"Uploaded file is empty: {original_filename}")
@@ -109,38 +105,33 @@ def convert_video():
 
         if len(output_files) == 1:
             output_path = output_files[0]
-            response = send_file(
+            return FileResponse(
                 output_path,
-                mimetype="audio/mpeg",
-                as_attachment=True,
-                download_name=output_path.name,
-                conditional=True,
+                media_type="audio/mpeg",
+                filename=output_path.name,
+                background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
             )
-            response.call_on_close(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
-            return response
 
         zip_path = temp_dir / "converted_audio.zip"
         _create_conversion_zip(output_files, zip_path)
 
-        response = send_file(
+        return FileResponse(
             zip_path,
-            mimetype="application/zip",
-            as_attachment=True,
-            download_name=zip_path.name,
-            conditional=True,
+            media_type="application/zip",
+            filename=zip_path.name,
+            background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
         )
-        response.call_on_close(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
-        return response
 
     except FFmpegNotAvailableError:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return jsonify(
-            error="FFmpeg is not installed or is not available in PATH."
-        ), 500
+        return JSONResponse(
+            {"error": "FFmpeg is not installed or is not available in PATH."},
+            status_code=500,
+        )
     except ValueError as error:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return jsonify(error=str(error)), 400
+        return JSONResponse({"error": str(error)}, status_code=400)
     except Exception:
         logger.exception("Unexpected error converting uploaded video files")
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return jsonify(error="Media conversion failed."), 500
+        return JSONResponse({"error": "Media conversion failed."}, status_code=500)

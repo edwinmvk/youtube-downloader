@@ -2,7 +2,7 @@
 
 ## Docker architecture
 
-The Flask backend runs in its own Docker container. It is not directly exposed to the Windows host. Nginx is the public entry point.
+The FastAPI backend runs in its own Docker container. It is not directly exposed to the Windows host. Nginx is the public entry point.
 
 ```text
                          Browser
@@ -18,15 +18,16 @@ The Flask backend runs in its own Docker container. It is not directly exposed t
                  ┌─────────────────────────┐
                  │ BACKEND CONTAINER       │
                  │                         │
-                 │ Gunicorn                │
+                 │ Gunicorn               │
+                 │ Uvicorn worker          │
                  │     ↓                   │
-                 │ Flask :5000             │
+                 │ FastAPI :5000           │
                  │                         │
                  │ ├─ Request validation   │
                  │ ├─ Async jobs           │
                  │ ├─ Progress tracking    │
                  │ ├─ Cancellation         │
-                 │ ├─ Filename handling    │
+                 │ ├─ Filename handling     │
                  │ ├─ Temporary cleanup    │
                  │ ├─ yt-dlp               │
                  │ ├─ EJS / Deno           │
@@ -34,7 +35,6 @@ The Flask backend runs in its own Docker container. It is not directly exposed t
                  └──────────┬──────────────┘
                             │
                             │ Docker HTTP
-                            │
                             ▼
                  ┌─────────────────────────┐
                  │ BGUTIL-PROVIDER         │
@@ -68,6 +68,23 @@ backend            → bgutil-provider:4416
 Port `5000` is internal to Docker and is not published to the Windows host.
 
 Port `4416` is internal to Docker and is not published publicly.
+
+## API endpoints
+
+```text
+GET  /api/health
+
+POST /api/download
+
+POST /api/download/start
+GET  /api/download/progress/{job_id}
+POST /api/download/cancel/{job_id}
+GET  /api/download/file/{job_id}
+
+POST /api/convert
+```
+
+The endpoint paths and response behavior remain compatible with the existing frontend.
 
 ## Features
 
@@ -104,6 +121,24 @@ Handled failures include:
 Detailed technical errors are logged server-side. Client responses contain safe, user-facing error messages.
 
 Temporary files are removed after successful processing, cancellation, or failure.
+
+## Environment variables
+
+| Variable | Purpose | Docker value / example |
+|---|---|---|
+| `FRONTEND_URL` | Browser origin allowed by FastAPI CORS | `http://localhost` |
+| `MAX_FILE_SIZE_MB` | Maximum request body size | `500` |
+| `MAX_CONCURRENT_DOWNLOADS` | Maximum simultaneous URL download jobs | `2` |
+| `DOWNLOAD_JOB_TTL_SECONDS` | Lifetime of in-memory download jobs | `1800` |
+| `POT_PROVIDER_URL` | Internal bgutil provider address | `http://bgutil-provider:4416` |
+
+For Docker, use:
+
+```env
+POT_PROVIDER_URL=http://bgutil-provider:4416
+```
+
+Do not change this to `127.0.0.1:4416` inside the backend container.
 
 ## Port visibility
 

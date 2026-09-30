@@ -6,7 +6,7 @@
 
 ## Description
 
-YouTube Downloader is a full-stack media downloading and conversion application built with a **Next.js frontend**, **Python Flask backend**, **yt-dlp**, **FFmpeg**, **Deno**, **bgutil PO Token provider**, and **Nginx**.
+YouTube Downloader is a full-stack media downloading and conversion application built with a **Next.js frontend**, **Python FastAPI backend**, **yt-dlp**, **FFmpeg**, **Deno**, **bgutil PO Token provider**, and **Nginx**.
 
 The application supports YouTube URL downloads as MP3 or MP4, MP4 quality selection, asynchronous download progress, download cancellation, local video-to-MP3 conversion, batch conversion of up to 10 local videos, ZIP output for multi-file conversion, Unicode-safe filenames, and temporary-file cleanup. The application does not use a database, authentication, user accounts, or persistent media records.
 
@@ -36,8 +36,9 @@ The application supports YouTube URL downloads as MP3 or MP4, MP4 quality select
                 │ FRONTEND        │       │ BACKEND                     │
                 │ CONTAINER       │       │ CONTAINER                   │
                 │                 │       │                             │
-                │ Next.js :3000   │       │ Gunicorn :5000              │
+                │ Next.js :3000   │       │ Gunicorn + Uvicorn :5000    │
                 │                 │       │                             │
+                │                 │       │ FastAPI                     │
                 │                 │       │ yt-dlp + EJS/Deno + FFmpeg  │
                 └─────────────────┘       └────────┬────────────────────┘
                                                     │
@@ -55,7 +56,7 @@ The application supports YouTube URL downloads as MP3 or MP4, MP4 quality select
 
 Inside the Docker frontend container, Next.js runs as a production app (`NODE_ENV=production` in Docker Compose). The Docker setup does not start the application with `npm run dev`.
 
-Inside the Docker backend container, the Flask application is served by Gunicorn on port 5000. The Docker setup does not start the application with `python app.py` or Flask's development server.
+Inside the Docker backend container, the FastAPI application is served by Gunicorn with a Uvicorn worker on port 5000. The Docker setup does not start the application with the FastAPI development server in production.
 
 The backend container also contains:
 
@@ -75,6 +76,7 @@ Browser
   │
   └── /api/* -------------------------> Nginx ----> Backend :5000
                                                     │
+                                                    ├── FastAPI
                                                     ├── yt-dlp
                                                     ├── Deno / EJS
                                                     ├── FFmpeg
@@ -117,7 +119,7 @@ Install the following on the host machine:
 - A modern web browser
 - Internet access for URL-based media downloads
 
-The application runtime dependencies such as Python, Flask, FFmpeg, Deno, yt-dlp, Node.js, Next.js, Nginx, and the PO Token provider run inside their respective Docker images/containers.
+The application runtime dependencies such as Python, FastAPI, FFmpeg, Deno, yt-dlp, Node.js, Next.js, Nginx, and the PO Token provider run inside their respective Docker images/containers.
 
 Verify Docker:
 
@@ -130,36 +132,36 @@ docker compose version
 
 Run all commands from the repository root.
 
-The project uses a single root environment file named `.env.docker`. Since the file is intentionally named `.env.docker` instead of `.env`, pass it explicitly to Docker Compose using `--env-file .env.docker`.
+The project uses a single root environment file named `.env`. Docker Compose automatically reads `.env` from the project root, so no `--env-file` option is required.
 
 ### 1. Validate the Compose configuration
 
 ```cmd
-docker compose --env-file .env.docker config
+docker compose config
 ```
 
 ### 2. Build the application images
 
 ```cmd
-docker compose --env-file .env.docker build
+docker compose build
 ```
 
 ### 3. Start the complete application
 
 ```cmd
-docker compose --env-file .env.docker up
+docker compose up
 ```
 
 For detached/background mode:
 
 ```cmd
-docker compose --env-file .env.docker up -d
+docker compose up -d
 ```
 
 ### 4. Verify the containers
 
 ```cmd
-docker compose --env-file .env.docker ps
+docker compose ps
 ```
 
 Expected services:
@@ -192,16 +194,38 @@ http://localhost
 ### 7. Stop the application
 
 ```cmd
-docker compose --env-file .env.docker down -v
+docker compose down -v
 ```
 
 ## Environment variables
 
-The Docker setup uses a single environment file in the root `.env.docker`.
+The Docker setup uses two root environment files:
 
-### Root `.env.docker`
+```text
+.env
+.env.example
+```
 
-The root `.env.docker` supplies the Docker Compose configuration used by the application:
+`.env` contains the values used by your local Docker Compose environment and should not be committed to Git.
+
+`.env.example` is the safe template for other developers. It should be committed to Git and should not contain secrets.
+
+### Root `.env`
+
+The local `.env` should contain:
+
+```env
+FRONTEND_URL=http://localhost
+MAX_FILE_SIZE_MB=500
+MAX_CONCURRENT_DOWNLOADS=2
+DOWNLOAD_JOB_TTL_SECONDS=1800
+POT_PROVIDER_URL=http://bgutil-provider:4416
+NEXT_PUBLIC_API_URL=/api
+```
+
+### Root `.env.example`
+
+Keep the same variable names and safe example values:
 
 ```env
 FRONTEND_URL=http://localhost
@@ -214,14 +238,14 @@ NEXT_PUBLIC_API_URL=/api
 
 | Variable | Purpose | Value |
 |---|---|---|
-| `FRONTEND_URL` | Browser-facing origin served by Nginx and used by backend CORS | `http://localhost` |
-| `MAX_FILE_SIZE_MB` | Total request body/upload limit for Flask conversion | `500` |
-| `MAX_CONCURRENT_DOWNLOADS` | In-memory async download worker count | `2` |
+| `FRONTEND_URL` | Browser-facing origin served by Nginx and used by the backend for CORS | `http://localhost` |
+| `MAX_FILE_SIZE_MB` | Total request body/upload limit for FastAPI conversion | `500` |
+| `MAX_CONCURRENT_DOWNLOADS` | In-memory async download concurrency limit | `2` |
 | `DOWNLOAD_JOB_TTL_SECONDS` | How long completed async jobs remain available in memory | `1800` |
 | `POT_PROVIDER_URL` | Docker Compose service address of the PO Token provider | `http://bgutil-provider:4416` |
-| `NEXT_PUBLIC_API_URL` | Browser-facing API base path routed by Nginx to Flask | `/api` |
+| `NEXT_PUBLIC_API_URL` | Browser-facing API base path routed by Nginx to FastAPI | `/api` |
 
-There are no required `.env` files in the root, `frontend`, or `backend` directories for this Docker setup.
+There are no required `.env` files inside the `frontend` or `backend` directories for this Docker setup.
 
 ## Project structure
 
@@ -230,7 +254,9 @@ youtube-downloader/
 │
 ├── README.md
 ├── docker-compose.yml
-├── .env.docker
+├── .env
+├── .env.example
+├── .gitignore
 │
 ├── nginx/
 │   └── default.conf

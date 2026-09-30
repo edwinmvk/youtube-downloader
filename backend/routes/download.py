@@ -1,31 +1,36 @@
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import yt_dlp
-from flask import Blueprint, jsonify, request, send_file
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.background import BackgroundTask
+from starlette.concurrency import run_in_threadpool
 
 from services.ffmpeg_service import FFmpegNotAvailableError, ensure_ffmpeg_available
 from services.job_service import DownloadJob, job_manager
 from services.yt_dlp_service import (
     DownloadCancelled,
     MediaDownloadError,
-    validate_resolution,
     download_media,
+    validate_resolution,
 )
 
 logger = logging.getLogger(__name__)
 
-download_bp = Blueprint("download", __name__)
+download_router = APIRouter()
 
 
 def _validate_request_body(
-    data: dict | None,
+    data: Any,
 ) -> tuple[str | None, str | None, str | None, str | None]:
-    if not data or "url" not in data or "format" not in data:
+    if not isinstance(data, dict) or "url" not in data or "format" not in data:
         return None, None, None, "Invalid request. URL and format are required."
 
     url = data.get("url")
@@ -51,7 +56,14 @@ def _validate_request_body(
     return url.strip(), media_format, resolution, None
 
 
-def _update_job_from_progress(job: DownloadJob, **data) -> None:
+async def _read_json_body(request: Request) -> Any:
+    try:
+        return await request.json()
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError):
+        return None
+
+
+def _update_job_from_progress(job: DownloadJob, **data: Any) -> None:
     job_manager.update(
         job.job_id,
         status="downloading" if data.get("status") == "downloading" else "processing",
@@ -116,150 +128,188 @@ def _run_async_job(job: DownloadJob) -> None:
         job_manager.mark_failed(job, "Unable to download the requested media.")
 
 
-@download_bp.post("/api/download")
-def download_from_url():
+@download_router.post("/api/download")
+async def download_from_url(request: Request):
     """Backward-compatible synchronous endpoint."""
-    data = request.get_json(silent=True)
+    data = await _read_json_body(request)
     url, media_format, resolution, validation_error = _validate_request_body(data)
     if validation_error:
-        return jsonify(error=validation_error), 400
+        return JSONResponse({"error": validation_error}, status_code=400)
 
     try:
         ensure_ffmpeg_available()
     except FFmpegNotAvailableError:
-        return jsonify(
-            error="FFmpeg is not installed or is not available in PATH."
-        ), 500
+        return JSONResponse(
+            {"error": "FFmpeg is not installed or is not available in PATH."},
+            status_code=500,
+        )
 
+    assert url is not None
+    assert media_format is not None
     temp_dir = Path(tempfile.mkdtemp(prefix="media_downloader_"))
 
     try:
-        output_path, download_name, _, _, _ = download_media(
-            url=url,
-            media_format=media_format,
-            temp_dir=temp_dir,
+        output_path, download_name, _, _, _ = await run_in_threadpool(
+            download_media,
+            url,
+            media_format,
+            temp_dir,
             resolution=resolution,
         )
 
         mimetype = "audio/mpeg" if media_format == "mp3" else "video/mp4"
-        response = send_file(
-            output_path,
-            mimetype=mimetype,
-            as_attachment=True,
-            download_name=download_name,
-            conditional=True,
-        )
+        headers = {}
         if download_name.isascii():
-            response.headers["X-Download-Filename"] = download_name
-        response.call_on_close(lambda: shutil.rmtree(temp_dir, ignore_errors=True))
-        return response
+            headers["X-Download-Filename"] = download_name
+
+        return FileResponse(
+            output_path,
+            media_type=mimetype,
+            filename=download_name,
+            headers=headers,
+            background=BackgroundTask(shutil.rmtree, temp_dir, ignore_errors=True),
+        )
 
     except yt_dlp.utils.DownloadError as error:
         logger.warning("yt-dlp download error for %s: %s", url, error)
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return jsonify(error="Unable to download the requested media."), 400
+        return JSONResponse(
+            {"error": "Unable to download the requested media."},
+            status_code=400,
+        )
     except MediaDownloadError as error:
         logger.warning("Media download failed for %s: %s", url, error)
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return jsonify(error=str(error)), 400
+        return JSONResponse({"error": str(error)}, status_code=400)
     except FFmpegNotAvailableError:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return jsonify(
-            error="FFmpeg is not installed or is not available in PATH."
-        ), 500
+        return JSONResponse(
+            {"error": "FFmpeg is not installed or is not available in PATH."},
+            status_code=500,
+        )
     except Exception:
         logger.exception("Unexpected error while downloading media from %s", url)
         shutil.rmtree(temp_dir, ignore_errors=True)
-        return jsonify(error="Unable to download the requested media."), 500
+        return JSONResponse(
+            {"error": "Unable to download the requested media."},
+            status_code=500,
+        )
 
 
-@download_bp.post("/api/download/start")
-def start_download():
-    data = request.get_json(silent=True)
+@download_router.post("/api/download/start")
+async def start_download(request: Request):
+    data = await _read_json_body(request)
     url, media_format, resolution, validation_error = _validate_request_body(data)
     if validation_error:
-        return jsonify(error=validation_error), 400
+        return JSONResponse({"error": validation_error}, status_code=400)
 
     try:
         ensure_ffmpeg_available()
     except FFmpegNotAvailableError:
-        return jsonify(
-            error="FFmpeg is not installed or is not available in PATH."
-        ), 500
+        return JSONResponse(
+            {"error": "FFmpeg is not installed or is not available in PATH."},
+            status_code=500,
+        )
 
+    assert url is not None
+    assert media_format is not None
     job = job_manager.create(url, media_format, resolution)
     try:
         job_manager.submit(job, _run_async_job)
     except Exception:
         logger.exception("Failed to queue download job %s", job.job_id)
         job_manager.mark_failed(job, "Unable to download the requested media.")
-        return jsonify(error="Unable to download the requested media."), 500
+        return JSONResponse(
+            {"error": "Unable to download the requested media."},
+            status_code=500,
+        )
 
-    return jsonify(
-        job_id=job.job_id,
-        status="queued",
-        progress_url=f"/api/download/progress/{job.job_id}",
-        cancel_url=f"/api/download/cancel/{job.job_id}",
-        file_url=f"/api/download/file/{job.job_id}",
-    ), 202
+    return JSONResponse(
+        {
+            "job_id": job.job_id,
+            "status": "queued",
+            "progress_url": f"/api/download/progress/{job.job_id}",
+            "cancel_url": f"/api/download/cancel/{job.job_id}",
+            "file_url": f"/api/download/file/{job.job_id}",
+        },
+        status_code=202,
+    )
 
 
-@download_bp.get("/api/download/progress/<job_id>")
+@download_router.get("/api/download/progress/{job_id}")
 def download_progress(job_id: str):
     job = job_manager.get(job_id)
     if job is None:
-        return jsonify(error="Download job not found or expired."), 404
-    return jsonify(job.snapshot())
+        return JSONResponse(
+            {"error": "Download job not found or expired."},
+            status_code=404,
+        )
+    return job.snapshot()
 
 
-@download_bp.post("/api/download/cancel/<job_id>")
+@download_router.post("/api/download/cancel/{job_id}")
 def cancel_download(job_id: str):
     job, state = job_manager.request_cancel(job_id)
     if job is None:
-        return jsonify(error="Download job not found or expired."), 404
+        return JSONResponse(
+            {"error": "Download job not found or expired."},
+            status_code=404,
+        )
 
     if state == "terminal":
-        return jsonify(
-            job_id=job.job_id,
-            status=job.status,
-            message="Download has already reached a terminal state.",
-        ), 200
+        return {
+            "job_id": job.job_id,
+            "status": job.status,
+            "message": "Download has already reached a terminal state.",
+        }
 
     if state == "cancelled":
-        return jsonify(
-            job_id=job.job_id,
-            status="cancelled",
-            message="Download cancelled.",
-        ), 200
+        return {
+            "job_id": job.job_id,
+            "status": "cancelled",
+            "message": "Download cancelled.",
+        }
 
-    return jsonify(
-        job_id=job.job_id,
-        status="cancelling",
-        message="Download cancellation requested.",
-    ), 202
+    return JSONResponse(
+        {
+            "job_id": job.job_id,
+            "status": "cancelling",
+            "message": "Download cancellation requested.",
+        },
+        status_code=202,
+    )
 
 
-@download_bp.get("/api/download/file/<job_id>")
+@download_router.get("/api/download/file/{job_id}")
 def download_completed_file(job_id: str):
     job = job_manager.get(job_id)
     if job is None:
-        return jsonify(error="Download job not found or expired."), 404
+        return JSONResponse(
+            {"error": "Download job not found or expired."},
+            status_code=404,
+        )
 
     if job.status != "completed" or job.output_path is None or not job.output_path.exists():
         if job.status in {"failed", "cancelled"}:
-            return jsonify(error=job.error or f"Download is {job.status}."), 409
-        return jsonify(error="Download is not completed yet."), 409
+            return JSONResponse(
+                {"error": job.error or f"Download is {job.status}."},
+                status_code=409,
+            )
+        return JSONResponse(
+            {"error": "Download is not completed yet."},
+            status_code=409,
+        )
 
     mimetype = "audio/mpeg" if job.media_format == "mp3" else "video/mp4"
-    response = send_file(
-        job.output_path,
-        mimetype=mimetype,
-        as_attachment=True,
-        download_name=job.filename or job.output_path.name,
-        conditional=True,
-    )
     download_name = job.filename or job.output_path.name
+    headers = {}
     if download_name.isascii():
-        response.headers["X-Download-Filename"] = download_name
-    response.call_on_close(lambda: job_manager.finish_file_delivery(job_id))
-    return response
+        headers["X-Download-Filename"] = download_name
+
+    return FileResponse(
+        job.output_path,
+        media_type=mimetype,
+        filename=download_name,
+        headers=headers,
+        background=BackgroundTask(job_manager.finish_file_delivery, job_id),
+    )

@@ -1,10 +1,12 @@
 # Ignore environment variable files
-.env
-.env.*
+.env 
+.env.local 
+.env.*.local
 
 # But keep example environment files
 !.env*.example
 
 # OS files
+*.log
 .DS_Store
 Thumbs.db
