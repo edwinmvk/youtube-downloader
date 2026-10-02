@@ -94,6 +94,8 @@ frontend:3000
 - Multi-file upload for up to 10 videos.
 - ZIP download handling for multi-file conversion.
 - Unicode filename preservation.
+- Dedicated Audio Trimmer page with playback and range preview.
+- Dedicated Audio Merger page with arrow-button ordering and smooth rearrangement animation.
 
 ## Error handling
 
@@ -131,3 +133,55 @@ Docker internal
 ```
 
 The frontend is not directly published on `localhost:3000` in the Docker-based setup.
+
+
+## Audio editing pages
+
+The frontend exposes three dedicated media-tool routes:
+
+```text
+/video-to-mp3
+/audio-trimmer
+/audio-merger
+```
+
+The pages use the project's existing shadcn-style `Button` component and the existing Tailwind/shadcn theme rather than introducing a separate component library.
+
+### Video to MP3
+
+The converter lets the user:
+
+1. Select or drop up to 10 local video files.
+2. Review and remove files before conversion.
+3. Convert the selected videos to MP3 through the backend FFmpeg service.
+4. Download one MP3 for a single input or a ZIP containing all converted files.
+5. Continue editing the same set or start a new set after completion.
+
+### Audio Trimmer
+
+The trimmer lets the user:
+
+1. Select one audio file.
+2. Set the start and end of the section to keep with a single dual-handle range slider.
+3. Use keyboard-accessible slider handles or numeric time inputs for precise adjustments.
+4. Preview exactly that range in the browser.
+5. Export and download the trimmed MP3.
+6. Choose between continuing with the same song or starting with a new song after the download.
+
+### Audio Merger
+
+The merger lets the user:
+
+1. Select multiple audio files, up to 10.
+2. Drag files into the desired order.
+3. Move files up/down or remove them.
+4. Merge the ordered list into one MP3.
+5. Choose between continuing with the current set or starting with a new set after download.
+
+Supported audio extensions are:
+
+```text
+MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, WEBM
+```
+
+The existing `MAX_FILE_SIZE` limit applies to each uploaded file, while the backend request-size middleware continues to protect the overall request body.

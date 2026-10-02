@@ -82,6 +82,9 @@ POST /api/download/cancel/{job_id}
 GET  /api/download/file/{job_id}
 
 POST /api/convert
+
+POST /api/audio/trim
+POST /api/audio/merge
 ```
 
 The endpoint paths and response behavior remain compatible with the existing frontend.
@@ -99,6 +102,8 @@ The endpoint paths and response behavior remain compatible with the existing fro
 - Unicode-preserving filename sanitization.
 - FFmpeg audio extraction and media merging.
 - Temporary-file and job cleanup.
+- Single-file audio trimming with start/end range validation.
+- Multi-file audio merging with caller-specified file order.
 - yt-dlp EJS/Deno support.
 - PO Token retrieval through the internal bgutil provider.
 

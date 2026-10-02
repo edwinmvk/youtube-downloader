@@ -159,7 +159,7 @@
 }
 
 @layer components {
-  .surface-card { @apply rounded-2xl border border-border/70 bg-card/90 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.3)] backdrop-blur; }
+  .surface-card { @apply rounded-3xl border border-border/70 bg-card/90 shadow-[0_24px_70px_-34px_rgba(15,23,42,0.32)] backdrop-blur; }
   .brand-mark { @apply flex size-9 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-lg shadow-primary/20; }
   .brand-mark svg { @apply size-4; }
   .icon-tile { @apply flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary; }
@@ -176,4 +176,65 @@
   .toast { @apply fixed bottom-5 left-1/2 z-50 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-xl dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-200; }
   .toast svg { @apply size-4 shrink-0; }
   .toast-error { @apply border-destructive/20 bg-destructive/10 text-destructive; }
+}
+
+@layer components {
+  .dual-range {
+    position: relative;
+    height: 56px;
+    isolation: isolate;
+    touch-action: none;
+  }
+  .dual-range-track,
+  .dual-range-selection {
+    position: absolute;
+    top: 16px;
+    height: 6px;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  .dual-range-track {
+    left: 0;
+    right: 0;
+    background: var(--muted);
+  }
+  .dual-range-selection {
+    background: var(--primary);
+  }
+  .dual-range-thumb {
+    position: absolute;
+    top: 2px;
+    width: 28px;
+    height: 28px;
+    margin-left: -14px;
+    padding: 0;
+    border: 3px solid var(--background);
+    border-radius: 999px;
+    background: var(--primary);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+    cursor: grab;
+    touch-action: none;
+    transform: scale(1);
+    transition: transform 120ms ease, box-shadow 120ms ease;
+  }
+  .dual-range-thumb:hover,
+  .dual-range-thumb-active {
+    transform: scale(1.12);
+    box-shadow: 0 0 0 5px color-mix(in oklch, var(--ring) 20%, transparent), 0 3px 10px rgb(0 0 0 / 22%);
+  }
+  .dual-range-thumb:active { cursor: grabbing; }
+  .dual-range-thumb:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--ring) 28%, transparent), 0 2px 8px rgb(0 0 0 / 20%);
+  }
+  .dual-range-thumb:disabled { cursor: not-allowed; opacity: 0.5; }
+  .dual-range-labels { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; font-size: 11px; color: var(--muted-foreground); pointer-events: none; }
+
+  .audio-merge-item {
+    will-change: transform;
+    transition: transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 220ms ease, border-color 180ms ease, opacity 180ms ease;
+  }
+  .audio-merge-list {
+    touch-action: manipulation;
+  }
 }

@@ -8,7 +8,36 @@
 
 YouTube Downloader is a full-stack media downloading and conversion application built with a **Next.js frontend**, **Python FastAPI backend**, **yt-dlp**, **FFmpeg**, **Deno**, **bgutil PO Token provider**, and **Nginx**.
 
-The application supports YouTube URL downloads as MP3 or MP4, MP4 quality selection, asynchronous download progress, download cancellation, local video-to-MP3 conversion, batch conversion of up to 10 local videos, ZIP output for multi-file conversion, Unicode-safe filenames, and temporary-file cleanup. The application does not use a database, authentication, user accounts, or persistent media records.
+The application supports YouTube URL downloads as MP3 or MP4, MP4 quality selection, asynchronous download progress, download cancellation, local video-to-MP3 conversion, batch conversion of up to 10 local videos, ZIP output for multi-file conversion, Unicode-safe filenames, temporary-file cleanup, interactive audio trimming, multi-track audio merging, and a dedicated local video-to-MP3 page. The application does not use a database, authentication, user accounts, or persistent media records.
+
+## Media editing features
+
+### Video to MP3
+
+The dedicated `/video-to-mp3` page accepts up to 10 local video files and converts them to MP3 with FFmpeg. A single video downloads as an MP3; multiple videos are returned as a ZIP archive.
+
+
+### Audio trimmer
+
+The audio trimmer accepts one audio file and provides:
+
+- A single dual-handle trim slider for start and end points, plus numeric time inputs.
+- Native browser playback for the original audio.
+- Preview of only the selected trim range.
+- FFmpeg-based MP3 export at 192 kbps.
+- Unicode-preserving output names.
+- Completion dialog with options to continue editing or start with a new song.
+
+### Audio merger
+
+The audio merger accepts up to 10 audio files and provides:
+
+- Drag-and-drop reordering.
+- Accessible move-up and move-down controls.
+- File removal before processing.
+- FFmpeg normalization and ordered concatenation.
+- A single MP3 download after merging.
+- Completion dialog with options to continue editing or start with a new set.
 
 ## Whole-project architecture
 

@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? ''
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? ''
 
 export type MediaFormat = 'mp3' | 'mp4'
 export type Resolution = 'highest' | 'medium' | 'lowest'
@@ -20,7 +20,11 @@ async function parseError(response: Response) {
 }
 
 async function request(url: string, init?: RequestInit) {
-  try { return await fetch(`${API_BASE_URL}${url}`, init) } catch { throw new Error('Backend unavailable. Please make sure the Flask server is running.') }
+  // NEXT_PUBLIC_API_URL is commonly set to /api when Nginx owns the public /api prefix.
+  // Keep endpoint definitions as /api/... so they also work when the base URL is empty or absolute.
+  const normalizedPath = API_BASE_URL.replace(/\/$/, '') === '/api' && url.startsWith('/api/') ? url.slice(4) : url
+  const target = `${API_BASE_URL.replace(/\/$/, '')}${normalizedPath}` || normalizedPath
+  try { return await fetch(target, init) } catch { throw new Error('Backend unavailable. Please make sure the backend service is running.') }
 }
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -54,6 +58,25 @@ export async function convertVideosToMp3(files: File[]) {
   const formData = new FormData()
   for (const file of files) formData.append('files', file)
   const response = await request('/api/convert', { method: 'POST', body: formData })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response
+}
+
+
+export async function trimAudio(file: File, startSeconds: number, endSeconds: number) {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('start_seconds', String(startSeconds))
+  formData.append('end_seconds', String(endSeconds))
+  const response = await request('/api/audio/trim', { method: 'POST', body: formData })
+  if (!response.ok) throw new Error(await parseError(response))
+  return response
+}
+
+export async function mergeAudioFiles(files: File[]) {
+  const formData = new FormData()
+  for (const file of files) formData.append('files', file)
+  const response = await request('/api/audio/merge', { method: 'POST', body: formData })
   if (!response.ok) throw new Error(await parseError(response))
   return response
 }

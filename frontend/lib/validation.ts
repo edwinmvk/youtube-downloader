@@ -20,3 +20,15 @@ export function validateVideoFile(file: File) {
   }
   return ''
 }
+
+
+export const ACCEPTED_AUDIO_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'webm'] as const
+
+export function validateAudioFile(file: File) {
+  if (file.size > MAX_FILE_SIZE) return 'That file is larger than the 500 MB limit.'
+  const extension = file.name.split('.').pop()?.toLowerCase()
+  if (!extension || !ACCEPTED_AUDIO_EXTENSIONS.includes(extension as (typeof ACCEPTED_AUDIO_EXTENSIONS)[number])) {
+    return 'Choose an MP3, WAV, M4A, AAC, FLAC, OGG, OPUS, or WEBM audio file.'
+  }
+  return ''
+}

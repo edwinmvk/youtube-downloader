@@ -15,6 +15,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from routes.convert import convert_router
+from routes.audio import audio_router
 from routes.download import download_router
 from routes.health import health_router
 from services.ffmpeg_service import FFmpegNotAvailableError
@@ -120,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(download_router)
     app.include_router(convert_router)
+    app.include_router(audio_router)
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(
